@@ -1,0 +1,19 @@
+{
+ "status": 200,
+ "note": "3.2.2: RADIUS challenge answered with the correct PIN through /auth/login/mfaauth",
+ "body": {
+  "auth_token": "SESS_TOKEN_test",
+  "expires_after": "2026-09-22T11:35:09.000000Z",
+  "renewable_until": "2026-09-22T15:25:09.000000Z",
+  "user_properties": {
+   "requires_mfa_enrollment": false,
+   "user_type": "admin",
+   "allowed_profiles": [
+    "userlogin"
+   ],
+   "enforce_strong_passwords": true,
+   "username": "radius-admin",
+   "allow_password_change": false
+  }
+ }
+}

@@ -1,0 +1,23 @@
+name: Bug report
+description: Something does not work
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: connection_info
+    attributes:
+      label: Output of `uvx as-mcp-server check` (or the connection_info tool)
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: as-mcp-server version, Access Server version, OS, agent
+      placeholder: "0.1.0, 3.2.2, macOS 15, Claude Code"
+    validations:
+      required: true

@@ -1,0 +1,7 @@
+{
+ "status": 403,
+ "note": "admin endpoint with a non-admin token",
+ "body": {
+  "reason": "Insufficient privileges to use this API"
+ }
+}

@@ -1,0 +1,63 @@
+{
+ "status": 200,
+ "note": "members counted only",
+ "body": {
+  "total": 1,
+  "profiles": [
+   {
+    "member_count": 2,
+    "name": "staff",
+    "allow_generate_profiles": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "default"
+    },
+    "deny": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "deny_web": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "admin": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "autologin": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "auth_method": {
+     "value": "local",
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "totp": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "password_strength": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "allow_password_change": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "reroute_gw": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    }
+   }
+  ]
+ }
+}

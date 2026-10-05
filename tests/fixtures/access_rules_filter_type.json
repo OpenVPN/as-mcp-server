@@ -1,0 +1,18 @@
+{
+ "status": 200,
+ "note": "type + match_data filters",
+ "body": {
+  "rules": [
+   {
+    "id": 1,
+    "ruleset_id": 1,
+    "type": "domain_routing",
+    "match_type": "domain_or_subdomain",
+    "match_data": "intranet.example.com",
+    "action": "nat",
+    "position": 100,
+    "comment": "internal web via VPN"
+   }
+  ]
+ }
+}

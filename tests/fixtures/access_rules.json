@@ -1,0 +1,28 @@
+{
+ "status": 200,
+ "note": "rules of the staff ruleset",
+ "body": {
+  "rules": [
+   {
+    "id": 1,
+    "ruleset_id": 1,
+    "type": "domain_routing",
+    "match_type": "domain_or_subdomain",
+    "match_data": "intranet.example.com",
+    "action": "nat",
+    "position": 100,
+    "comment": "internal web via VPN"
+   },
+   {
+    "id": 2,
+    "ruleset_id": 1,
+    "type": "domain_routing",
+    "match_type": "domain",
+    "match_data": "blocked.example.com",
+    "action": "deny",
+    "position": 200,
+    "comment": "blocked site"
+   }
+  ]
+ }
+}

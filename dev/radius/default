@@ -1,0 +1,52 @@
+# Dev stand only: a RADIUS server that answers every login with a challenge/response round.
+# Round 1: user name + first-factor password -> Access-Challenge "Enter your PIN" (State set).
+# Round 2: the PIN as User-Password with the State echoed -> Access-Accept, anything else -> Reject.
+# Passwords and PIN are dev-stand constants, mirrored in dev/.local/radius-admin.env.
+server default {
+    listen {
+        type = auth
+        ipaddr = *
+        port = 0
+    }
+
+    authorize {
+        if (!&State) {
+            if (&User-Password == "radius-first-factor") {
+                update reply {
+                    &Reply-Message := "Enter your PIN"
+                    &State := "%{randstr:aaaaaaaaaaaaaaaa}"
+                }
+                update control {
+                    &Response-Packet-Type := Access-Challenge
+                }
+                handled
+            }
+            else {
+                update reply {
+                    &Reply-Message := "Wrong password"
+                }
+                reject
+            }
+        }
+        elsif (&User-Password == "4321") {
+            update control {
+                &Auth-Type := Accept
+            }
+        }
+        else {
+            update reply {
+                &Reply-Message := "Wrong PIN"
+            }
+            reject
+        }
+    }
+
+    authenticate {
+    }
+
+    post-auth {
+        Post-Auth-Type REJECT {
+            ok
+        }
+    }
+}

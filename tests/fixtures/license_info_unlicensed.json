@@ -1,0 +1,9 @@
+{
+ "status": 200,
+ "note": "AS 3.1.0 without a subscription",
+ "body": {
+  "licensing_type": "unlicensed",
+  "current_cc": 0,
+  "max_cc": 2
+ }
+}

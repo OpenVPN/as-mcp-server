@@ -1,0 +1,7 @@
+{
+ "status": 403,
+ "note": "3.2.2: same TOTP code used twice within one 30 s window",
+ "body": {
+  "reason": "Login failed"
+ }
+}

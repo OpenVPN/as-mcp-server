@@ -1,0 +1,27 @@
+{
+ "status": 200,
+ "note": "trial subscription active",
+ "body": {
+  "licensing_type": "subscription",
+  "current_cc": 0,
+  "max_cc": 10,
+  "agent_id": "AGENT_ID_test",
+  "agent_disabled": false,
+  "cc_limit": 10,
+  "error": null,
+  "fallback_cc": 2,
+  "grace_period": 30,
+  "last_successful_update": "2026-09-09T20:47:30Z",
+  "total_cc": 0,
+  "name": "Subscription 1",
+  "subkey": "SUBKEY_test",
+  "billing_id": "BILLING_ID_test",
+  "next_update": "2026-09-09T20:50:50Z",
+  "updates_failed": 0,
+  "notes": [],
+  "overdraft": false,
+  "server": "licensing.example.com",
+  "type": "-",
+  "state": "SUBSCRIPTION_OK"
+ }
+}

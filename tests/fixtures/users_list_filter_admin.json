@@ -1,0 +1,127 @@
+{
+ "status": 200,
+ "note": "admin filter",
+ "body": {
+  "total": 2,
+  "profiles": [
+   {
+    "password_defined": true,
+    "mfa_status": "enrolled",
+    "group": "staff",
+    "totp_locked": true,
+    "totp_secret": "JBSWY3DPEHPK3PXP",
+    "totp_admin_only": false,
+    "compile": true,
+    "name": "mfa-admin",
+    "allow_generate_profiles": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "default"
+    },
+    "deny": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "deny_web": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "admin": {
+     "value": true,
+     "inherited": false,
+     "inherited_source_type": "implicit_default"
+    },
+    "autologin": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "auth_method": {
+     "value": "local",
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "totp": {
+     "value": true,
+     "inherited": false,
+     "inherited_source_type": "configuration"
+    },
+    "password_strength": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "allow_password_change": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "reroute_gw": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    }
+   },
+   {
+    "password_defined": true,
+    "mfa_status": "disabled",
+    "totp_locked": false,
+    "totp_admin_only": false,
+    "compile": true,
+    "name": "openvpn",
+    "allow_generate_profiles": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "default"
+    },
+    "deny": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "deny_web": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "admin": {
+     "value": true,
+     "inherited": false,
+     "inherited_source_type": "implicit_default"
+    },
+    "autologin": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "implicit_default"
+    },
+    "auth_method": {
+     "value": "local",
+     "inherited": false,
+     "inherited_source_type": "configuration"
+    },
+    "totp": {
+     "value": false,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "password_strength": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "allow_password_change": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    },
+    "reroute_gw": {
+     "value": true,
+     "inherited": true,
+     "inherited_source_type": "configuration"
+    }
+   }
+  ]
+ }
+}

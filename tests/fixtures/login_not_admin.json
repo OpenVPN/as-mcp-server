@@ -1,0 +1,7 @@
+{
+ "status": 403,
+ "note": "non-admin user with request_admin=true",
+ "body": {
+  "reason": "User access denied"
+ }
+}

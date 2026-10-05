@@ -1,0 +1,19 @@
+{
+ "status": 200,
+ "note": "3.1.0: challenge/response with a correct code",
+ "body": {
+  "auth_token": "SESS_TOKEN_test",
+  "expires_after": "2026-09-09T21:06:01.000000Z",
+  "renewable_until": "2026-09-10T00:56:01.000000Z",
+  "user_properties": {
+   "requires_mfa_enrollment": false,
+   "user_type": "admin",
+   "allowed_profiles": [
+    "userlogin"
+   ],
+   "enforce_strong_passwords": true,
+   "username": "mfa-admin",
+   "allow_password_change": true
+  }
+ }
+}

@@ -1,0 +1,51 @@
+{
+ "status": 200,
+ "note": "",
+ "body": {
+  "def_deny": false,
+  "name": "__DEFAULT__",
+  "allow_generate_profiles": {
+   "value": true
+  },
+  "deny": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "deny_web": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "admin": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "autologin": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "auth_method": {
+   "value": "local",
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "totp": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "password_strength": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  },
+  "allow_password_change": {
+   "value": false,
+   "inherited": true,
+   "inherited_source_type": "implicit_default"
+  }
+ }
+}

@@ -1,0 +1,31 @@
+name: Tool request
+description: An Access Server task the agent should be able to do
+title: "[tool] "
+labels: [tool-request]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: What do you want to ask or do through your agent?
+      placeholder: "Disconnect a user", "show which users have MFA disabled", ...
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: Web API endpoint, if you know it
+      placeholder: POST /vpn/client/disconnect
+  - type: input
+    id: version
+    attributes:
+      label: Access Server version
+      placeholder: "3.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Does it change anything on the server?
+      options: ["No, read-only", "Yes, it writes or deletes", "Not sure"]
+    validations:
+      required: true

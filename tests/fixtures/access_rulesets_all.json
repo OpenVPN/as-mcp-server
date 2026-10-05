@@ -1,0 +1,16 @@
+{
+ "status": 200,
+ "note": "no owner = everything",
+ "body": {
+  "rulesets": [
+   {
+    "owner": "staff",
+    "owner_type": "group",
+    "id": 1,
+    "name": "Staff web",
+    "position": 100,
+    "comment": "dev-stand fixture"
+   }
+  ]
+ }
+}

@@ -1,0 +1,7 @@
+{
+ "status": 401,
+ "note": "3.2.2 with auth.module.type=saml: password login of an account without a per-user auth type; no challenge_context (2026-09-21)",
+ "body": {
+  "reason": "This profile requires web based SAML authentication. Please sign in via SAML."
+ }
+}

@@ -1,0 +1,7 @@
+{
+ "status": 500,
+ "note": "3.1.0: totp passed inline in /auth/login/userpassword",
+ "body": {
+  "detail": "Internal server error"
+ }
+}

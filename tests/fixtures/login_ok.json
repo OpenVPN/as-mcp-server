@@ -1,0 +1,19 @@
+{
+ "status": 200,
+ "note": "admin login without MFA, AS 3.2.2",
+ "body": {
+  "auth_token": "SESS_TOKEN_test",
+  "expires_after": "2026-09-09T20:58:48.000000Z",
+  "renewable_until": "2026-09-10T00:48:48.000000Z",
+  "user_properties": {
+   "requires_mfa_enrollment": false,
+   "user_type": "admin",
+   "allowed_profiles": [
+    "userlogin"
+   ],
+   "enforce_strong_passwords": true,
+   "username": "openvpn",
+   "allow_password_change": true
+  }
+ }
+}

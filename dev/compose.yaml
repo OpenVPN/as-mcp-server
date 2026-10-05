@@ -1,0 +1,49 @@
+# Disposable Access Server instances for the as-mcp-server dev loop.
+# Only the Admin UI / Web API port (943) is published; VPN ports are not needed for API tests.
+services:
+  as-3-2-2:
+    image: openvpn/openvpn-as:3.2.2-413ca39f-Ubuntu24
+    container_name: as-3-2-2
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - MKNOD
+    ports:
+      - "943:943"
+    volumes:
+      - as-3-2-2-data:/openvpn
+    restart: unless-stopped
+
+  # Compatibility target (minimum supported version). Start on demand:
+  #   docker compose --profile compat up -d
+  as-3-1-0:
+    image: openvpn/openvpn-as:3.1.0-e22fe316-Ubuntu24
+    container_name: as-3-1-0
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - MKNOD
+    ports:
+      - "944:943"
+    volumes:
+      - as-3-1-0-data:/openvpn
+    restart: unless-stopped
+    profiles:
+      - compat
+
+  # RADIUS server that always answers with a challenge/response round.
+  # Reached by the Access Server containers as host "radius" on the compose network.
+  radius:
+    image: freeradius/freeradius-server:3.2.10-alpine
+    container_name: dev-radius
+    command: ["-X"]
+    volumes:
+      - ./radius/clients.conf:/etc/raddb/clients.conf:ro
+      - ./radius/default:/etc/raddb/sites-enabled/default:ro
+    restart: unless-stopped
+
+volumes:
+  as-3-2-2-data:
+  as-3-1-0-data:
