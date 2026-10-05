@@ -1,0 +1,9 @@
+{
+ "status": 200,
+ "note": "",
+ "body": {
+  "auth_token": "SESS_TOKEN_test",
+  "expires_after": "2026-09-09T20:58:48.000000Z",
+  "renewable_until": "2026-09-10T00:48:48.000000Z"
+ }
+}

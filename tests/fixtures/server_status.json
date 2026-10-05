@@ -1,0 +1,485 @@
+{
+ "status": 200,
+ "note": "",
+ "body": {
+  "last_restarted": "2026-09-09T20:47:29.403414Z",
+  "service_status": {
+   "api": {
+    "status": "on",
+    "error": null
+   },
+   "auth": {
+    "status": "on",
+    "error": null
+   },
+   "daemon_pre": {
+    "status": "on",
+    "error": null
+   },
+   "bridge": {
+    "status": "on",
+    "error": null
+   },
+   "db_push": {
+    "status": "on",
+    "error": null
+   },
+   "web": {
+    "status": "on",
+    "error": null
+   },
+   "acme": {
+    "status": "on",
+    "error": null
+   },
+   "extip.polling_service": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "External IP polling service disabled per configuration",
+      "description": "will not poll for external IP addresses' info. Neither extip.polling_service.enable nor access_server_link.enable have been set to true.",
+      "tag": "EXTIP_POLLING_DISABLED",
+      "component": null
+     }
+    ]
+   },
+   "nftables_openvpn": {
+    "status": "on",
+    "error": null
+   },
+   "nf6tables_openvpn": {
+    "status": "on",
+    "error": null
+   },
+   "log": {
+    "status": "on",
+    "error": null
+   },
+   "client_query": {
+    "status": "on",
+    "error": null
+   },
+   "nftables_api": {
+    "status": "on",
+    "error": null
+   },
+   "nftables_web": {
+    "status": "on",
+    "error": null
+   },
+   "nf6tables_live": {
+    "status": "on",
+    "error": null
+   },
+   "nftables_live": {
+    "status": "on",
+    "error": null
+   },
+   "user": {
+    "status": "on",
+    "error": null
+   },
+   "openvpn_0": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.224.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "crl": {
+    "status": "on",
+    "error": null
+   },
+   "subscription": {
+    "status": "on",
+    "error": null
+   },
+   "openvpn_1": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.224.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_2": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.225.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_3": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.225.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_4": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.226.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_5": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.226.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_6": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.227.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_7": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.227.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_8": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.228.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_9": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.228.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_10": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.229.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_11": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.229.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_12": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.230.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_13": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.230.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_14": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.231.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_15": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.231.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_16": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.232.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_17": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.232.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_18": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.233.1",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "openvpn_19": {
+    "status": "on",
+    "error": [
+     {
+      "severity": "ok",
+      "message": "process started successfully on 172.27.233.129",
+      "description": "",
+      "tag": "OPENVPN_SERVICE_PROCESS_SUCCESS",
+      "component": null
+     },
+     {
+      "severity": "warning",
+      "message": "OpenVPN data-channel offloading was requested but failed to activate",
+      "description": "OpenVPN data-channel offloading was requested but failed to activate. This typically happens if there is a configuration option that is incompatible with DCO or if the DCO kernel module could not be loaded.",
+      "tag": "DCO_NOT_ACTIVE",
+      "component": null
+     }
+    ]
+   },
+   "dnsproxy": {
+    "status": "on",
+    "error": null
+   }
+  },
+  "auth_module_status": {
+   "ldap": "disabled",
+   "radius": "disabled",
+   "saml": "disabled",
+   "pas_only": "disabled",
+   "pam": "enabled",
+   "local": "enabled"
+  }
+ }
+}

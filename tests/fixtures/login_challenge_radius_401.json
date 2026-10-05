@@ -1,0 +1,9 @@
+{
+ "status": 401,
+ "note": "3.2.2: admin bound to a RADIUS back end (dev FreeRADIUS) that answers Access-Challenge; challenge is the RADIUS Reply-Message verbatim",
+ "body": {
+  "echo": true,
+  "challenge": "Enter your PIN",
+  "challenge_context": "RrSGIz+/xhf5TVNVBZncqUZpmSkPELLt"
+ }
+}

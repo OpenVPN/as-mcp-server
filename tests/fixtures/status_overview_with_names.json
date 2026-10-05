@@ -1,0 +1,53 @@
+{
+ "status": 200,
+ "note": "two config keys requested",
+ "body": {
+  "eula_status": {
+   "eula_version_as": 6,
+   "eula_web_hash": "d40786b35ba7ab34b942eee806feaf755edc1065c16daf9dca9221134527de35",
+   "eula_accepted": false
+  },
+  "server_info": {
+   "version": "3.2.2",
+   "build": "413ca39f",
+   "web_version": "69ba2c40",
+   "web_override": false,
+   "client_version": 35,
+   "os_distribution": "Ubuntu 24.04.4 LTS",
+   "architecture": "aarch64",
+   "cores": 10,
+   "system_cores": 10,
+   "os_hostname": "93b39cb5bf2a"
+  },
+  "dco_module": {
+   "available": false,
+   "version": "Kernel module not loaded"
+  },
+  "configuration_items": {
+   "total": 2,
+   "items": [
+    {
+     "name": "host.name",
+     "derived_from": "db",
+     "type": "string",
+     "description": "Hostname for Access Server (IP address or hostname)",
+     "category": "required",
+     "value": "172.21.0.2",
+     "redacted_value": null,
+     "default_value": "",
+     "allowed_values": null,
+     "type_hint": "hostname"
+    },
+    {
+     "name": "vpn.server.daemon.enable",
+     "derived_from": "default",
+     "type": "boolean",
+     "description": "If true, enables multi-daemon support, running multiple OpenVPN daemon instances. In multi-daemon mode daemons listen on the dynamic ports dynamic ports pool (see sa.dyn_port). Traffic is balanced between daemons running. If set to false, Access Server runs in single-daemon mode, in this case OpenVPN daemon listens on the single port defined by AS configuration",
+     "category": "default",
+     "value": true,
+     "default_value": true
+    }
+   ]
+  }
+ }
+}

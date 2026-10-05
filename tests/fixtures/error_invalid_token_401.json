@@ -1,0 +1,7 @@
+{
+ "status": 401,
+ "note": "any authenticated endpoint",
+ "body": {
+  "reason": "Invalid auth token"
+ }
+}

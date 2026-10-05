@@ -1,0 +1,7 @@
+{
+ "status": 500,
+ "note": "3.2.2: totp passed inline in /auth/login/userpassword -> server error (bug); use /auth/login/mfaauth instead",
+ "body": {
+  "detail": "Internal server error"
+ }
+}

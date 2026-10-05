@@ -1,0 +1,7 @@
+{
+ "status": 200,
+ "note": "enrollment with the intermediate 409 token",
+ "body": {
+  "username": "mfa-admin"
+ }
+}

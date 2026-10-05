@@ -1,0 +1,7 @@
+{
+ "status": 400,
+ "note": "documented DEFAULT is rejected",
+ "body": {
+  "reason": "Non-existent ruleset owner: DEFAULT"
+ }
+}

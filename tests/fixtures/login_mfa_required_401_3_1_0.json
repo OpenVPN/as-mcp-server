@@ -1,0 +1,9 @@
+{
+ "status": 401,
+ "note": "3.1.0: enrolled TOTP admin, no totp in body; MFAChallenge fields are top-level",
+ "body": {
+  "echo": true,
+  "challenge": "Enter Authenticator Code",
+  "challenge_context": "w1rIJE9qtOAnffAqfYsSBNSu6tK6ePzc"
+ }
+}

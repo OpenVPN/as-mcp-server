@@ -1,0 +1,123 @@
+{
+ "status": 200,
+ "note": "2026-10-02, one autologin client of user 'qa vpn test user' connected (openvpn 2.6.20)",
+ "body": {
+  "vpn_clients": [
+   {
+    "daemon_id": "openvpn_14",
+    "client_id": 0,
+    "bytes_received": 4001,
+    "bytes_sent": 3077,
+    "common_name": "qa vpn test user_AUTOLOGIN",
+    "username": "qa vpn test user",
+    "connected_since": "2026-10-02T12:22:51Z",
+    "datachannel_cipher": "AES-256-GCM",
+    "real_address": "172.21.0.5:38402",
+    "virtual_ipv4_address": "172.27.231.2",
+    "virtual_ipv6_address": ""
+   }
+  ],
+  "vpn_daemons": {
+   "openvpn_0": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_0"
+   },
+   "openvpn_1": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_1"
+   },
+   "openvpn_2": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_2"
+   },
+   "openvpn_3": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_3"
+   },
+   "openvpn_4": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_4"
+   },
+   "openvpn_5": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_5"
+   },
+   "openvpn_6": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_6"
+   },
+   "openvpn_7": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_7"
+   },
+   "openvpn_8": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_8"
+   },
+   "openvpn_9": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_9"
+   },
+   "openvpn_10": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_10"
+   },
+   "openvpn_11": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_11"
+   },
+   "openvpn_12": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_12"
+   },
+   "openvpn_13": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_13"
+   },
+   "openvpn_14": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_14"
+   },
+   "openvpn_15": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_15"
+   },
+   "openvpn_16": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_16"
+   },
+   "openvpn_17": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_17"
+   },
+   "openvpn_18": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_18"
+   },
+   "openvpn_19": {
+    "dco": false,
+    "version": "OpenVPN 2.7.5as aarch64-unknown-linux-gnu [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] [DCO]",
+    "daemon_id": "openvpn_19"
+   }
+  }
+ }
+}

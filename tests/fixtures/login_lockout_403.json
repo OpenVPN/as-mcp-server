@@ -1,0 +1,7 @@
+{
+ "status": 403,
+ "note": "3.2.2: after repeated authentication failures (captured from curl)",
+ "body": {
+  "reason": "LOCKOUT: user temporarily locked out due to multiple authentication failures"
+ }
+}

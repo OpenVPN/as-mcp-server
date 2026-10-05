@@ -1,0 +1,16 @@
+{
+ "status": 200,
+ "note": "AS 3.1.0",
+ "body": {
+  "version": "3.1.0",
+  "build": "e22fe316",
+  "web_version": "51aa6248",
+  "web_override": false,
+  "client_version": 35,
+  "os_distribution": "Ubuntu 24.04.4 LTS",
+  "architecture": "aarch64",
+  "cores": 10,
+  "system_cores": 10,
+  "os_hostname": "68d6e59fa49e"
+ }
+}

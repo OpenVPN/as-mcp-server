@@ -1,0 +1,10 @@
+{
+ "status": 400,
+ "note": "no X-OpenVPN-As-AuthToken header",
+ "body": {
+  "reason": "Request failed",
+  "detail": {
+   "x-openvpn-as-authtoken": "Field required"
+  }
+ }
+}

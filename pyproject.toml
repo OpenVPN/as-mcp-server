@@ -1,0 +1,60 @@
+[project]
+name = "as-mcp-server"
+version = "0.1.0"
+description = "Local MCP server that lets AI agents monitor an OpenVPN Access Server through its Web API (read-only)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "OpenVPN Inc", email = "as-mcp-maintainers@openvpn.com" }]
+requires-python = ">=3.12"
+keywords = ["openvpn", "access-server", "mcp", "model-context-protocol", "vpn"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "fastmcp>=4.0.3,<5",
+    "httpx>=0.28,<1",
+    "keyring>=25.6,<26",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.15,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/OpenVPN/as-mcp-server"
+Issues = "https://github.com/OpenVPN/as-mcp-server/issues"
+Changelog = "https://github.com/OpenVPN/as-mcp-server/blob/main/CHANGELOG.md"
+
+[project.scripts]
+as-mcp-server = "as_mcp_server.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["slow: needs OPENVPN_AS_LIVE_SLOW=1, waits on a real token expiry"]

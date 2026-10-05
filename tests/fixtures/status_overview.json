@@ -1,0 +1,31 @@
+{
+ "status": 200,
+ "note": "empty names",
+ "body": {
+  "eula_status": {
+   "eula_version_as": 6,
+   "eula_web_hash": "d40786b35ba7ab34b942eee806feaf755edc1065c16daf9dca9221134527de35",
+   "eula_accepted": false
+  },
+  "server_info": {
+   "version": "3.2.2",
+   "build": "413ca39f",
+   "web_version": "69ba2c40",
+   "web_override": false,
+   "client_version": 35,
+   "os_distribution": "Ubuntu 24.04.4 LTS",
+   "architecture": "aarch64",
+   "cores": 10,
+   "system_cores": 10,
+   "os_hostname": "93b39cb5bf2a"
+  },
+  "dco_module": {
+   "available": false,
+   "version": "Kernel module not loaded"
+  },
+  "configuration_items": {
+   "total": 0,
+   "items": []
+  }
+ }
+}

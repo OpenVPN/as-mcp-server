@@ -1,0 +1,7 @@
+{
+ "status": 403,
+ "note": "3.2.2: RADIUS challenge answered with a wrong PIN; the RADIUS Reply-Message (Wrong PIN) is not passed through",
+ "body": {
+  "reason": "Login failed"
+ }
+}
