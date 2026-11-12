@@ -39,7 +39,7 @@ async def test_every_tool_answers_on_both_servers(stand) -> None:
         assert {tool.name for tool in await client.list_tools()} == EXPECTED_TOOLS
     info = await call(mcp, "connection_info")
     assert info["error"] is None and info["session"]["authenticated"] is True
-    expected_version = "3.2.3" if name == "as-3-2-2" else "3.1.0"
+    expected_version = "3.2.3" if name == "as-latest" else "3.1.0"
     assert info["server"]["version"] == expected_version
     assert (await call(mcp, "get_server_info"))["version"] == expected_version
     assert "service_status" in await call(mcp, "get_server_status")
@@ -51,7 +51,7 @@ async def test_every_tool_answers_on_both_servers(stand) -> None:
     assert overview["configuration_items"]["total"] == len(items)
     license_info = await call(mcp, "get_license_info")
     assert license_info["licensing_type"] == (
-        "subscription" if name == "as-3-2-2" else "unlicensed"
+        "subscription" if name == "as-latest" else "unlicensed"
     )
     users = await call(mcp, "list_users")
     assert {"openvpn", "mfa-admin", "alice"} <= {p["name"] for p in users["profiles"]}
@@ -91,7 +91,9 @@ async def test_the_mfa_flow_end_to_end(stand, tmp_path: Path) -> None:
     name, _ = stand
     mfa = read_env_file(LOCAL / "mfa-admin.env")
     secret = mfa[
-        "MFA_ADMIN_TOTP_SECRET" if name == "as-3-2-2" else "MFA_ADMIN_TOTP_SECRET_3_1_0"
+        "MFA_ADMIN_TOTP_SECRET"
+        if name == "as-latest"
+        else "MFA_ADMIN_TOTP_SECRET_3_1_0"
     ]
     settings = settings_for(
         f"{name}.env", tmp_path, user="mfa-admin", password=mfa["OPENVPN_AS_PASSWORD"]
@@ -125,7 +127,7 @@ def test_the_check_command_reports_the_real_server(
     monkeypatch.setenv("OPENVPN_AS_CONFIG_DIR", str(settings.config_dir))
     assert cli.main(["check"]) == 0
     assert (
-        f"Access Server {'3.2.3' if name == 'as-3-2-2' else '3.1.0'}"
+        f"Access Server {'3.2.3' if name == 'as-latest' else '3.1.0'}"
         in capsys.readouterr().out
     )
 
@@ -139,7 +141,7 @@ async def test_status_overview_never_returns_the_subscription_bundle(stand) -> N
         {"config_names": ["subscription.bundle", "host.name"]},
     )
     items = {item["name"]: item for item in overview["configuration_items"]["items"]}
-    expected = REDACTED if name == "as-3-2-2" else ""
+    expected = REDACTED if name == "as-latest" else ""
     assert items["subscription.bundle"]["value"] == expected
     assert items["host.name"]["value"]
 

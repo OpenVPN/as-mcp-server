@@ -1,6 +1,6 @@
 """Ask a real agent the same questions several times and count how it behaves.
 
-Usage: uv run python dev/evals.py [--stand as-3-2-2] [--runs 3] [--case ID ...]
+Usage: uv run python dev/evals.py [--stand as-latest] [--runs 3] [--case ID ...]
        [--model MODEL] [--min-rate 0.8] [--user-settings]
        uv run python dev/evals.py --regrade dev/.local/evals/<time>
 
@@ -256,7 +256,7 @@ def report(runs: list[Run], min_rate: float) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--stand", default="as-3-2-2")
+    parser.add_argument("--stand", default="as-latest")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--case", action="append", choices=[c.id for c in CASES])
     parser.add_argument("--model")

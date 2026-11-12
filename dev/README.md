@@ -12,8 +12,8 @@
     docker compose -f dev/compose.yaml --profile compat down      # stop; add -v to wipe the servers
 
 Admin user is `openvpn`; the generated password is in the container log:
-`docker logs as-3-2-2 2>&1 | grep 'Auto-generated pass'`. Credentials for the live tests are
-kept in `dev/.local/*.env` (gitignored): `as-3-2-2.env`, `as-3-1-0.env`, `mfa-admin.env`
+`docker logs as-latest 2>&1 | grep 'Auto-generated pass'`. Credentials for the live tests are
+kept in `dev/.local/*.env` (gitignored): `as-latest.env`, `as-3-1-0.env`, `mfa-admin.env`
 (`MFA_ADMIN_TOTP_SECRET`, `MFA_ADMIN_TOTP_SECRET_3_1_0`), `radius-admin.env` (see
 "Rebuilding the fixtures"). Recreate them by hand if the
 containers are wiped: `OPENVPN_AS_URL`, `OPENVPN_AS_USER`, `OPENVPN_AS_PASSWORD`,
@@ -25,7 +25,7 @@ domain-routing rules. 3.2.3 runs on a trial subscription (`license/info` reports
 `subscription`); 3.1.0 is unlicensed on purpose.
 
 Lockout: five wrong passwords or MFA codes lock a user for 15 minutes. Clear it with
-`docker exec as-3-2-2 sacli stop && docker exec as-3-2-2 sacli start`.
+`docker exec as-latest sacli stop && docker exec as-latest sacli start`.
 
 The OpenAPI document is enabled on both servers (`openapi.web_access=1`):
 `https://localhost:943/api/docs`, raw yaml at `/api/api.yaml`.
@@ -38,7 +38,7 @@ Below `<BIN>` is the absolute path of `.venv/bin/as-mcp-server` in this clone (a
 
 Plain admin on 3.2.3 and on 3.1.0, password from `dev/.local/*.env` (Claude Code):
 
-    claude mcp add openvpn-as-322 -e OPENVPN_AS_URL=https://localhost:943 -e OPENVPN_AS_USER=openvpn -e OPENVPN_AS_PASSWORD=<from as-3-2-2.env> -e OPENVPN_AS_INSECURE=true -- <BIN>
+    claude mcp add openvpn-as-322 -e OPENVPN_AS_URL=https://localhost:943 -e OPENVPN_AS_USER=openvpn -e OPENVPN_AS_PASSWORD=<from as-latest.env> -e OPENVPN_AS_INSECURE=true -- <BIN>
     claude mcp add openvpn-as-310 -e OPENVPN_AS_URL=https://localhost:944 -e OPENVPN_AS_USER=openvpn -e OPENVPN_AS_PASSWORD=<from as-3-1-0.env> -e OPENVPN_AS_INSECURE=true -- <BIN>
 
 MFA admin on 3.2.3, password stored in the OS keyring (no secret in the agent config):
@@ -87,10 +87,10 @@ logs grow with every API login. `list_access_rules` replaces the original plan's
 Compose publishes only the web port, so the client runs as a container on the stand network.
 For a user named `qa vpn test user` on 3.2.3 (use `as-3-1-0` for 3.1.0):
 
-    docker exec as-3-2-2 sacli --user "qa vpn test user" --key type --value user_connect UserPropPut
-    docker exec as-3-2-2 sacli --user "qa vpn test user" --key prop_autologin --value true UserPropPut
-    docker exec as-3-2-2 sacli --user "qa vpn test user" GetAutologin > dev/.local/client.ovpn
-    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' as-3-2-2
+    docker exec as-latest sacli --user "qa vpn test user" --key type --value user_connect UserPropPut
+    docker exec as-latest sacli --user "qa vpn test user" --key prop_autologin --value true UserPropPut
+    docker exec as-latest sacli --user "qa vpn test user" GetAutologin > dev/.local/client.ovpn
+    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' as-latest
     # replace the address in the "remote" lines of client.ovpn with that one: the profile
     # carries host.name, and the containers can swap addresses after a restart
     docker run -d --rm --name vpn-client --network dev_default --cap-add NET_ADMIN \
@@ -99,7 +99,7 @@ For a user named `qa vpn test user` on 3.2.3 (use `as-3-1-0` for 3.1.0):
 
 `docker logs vpn-client` shows "Initialization Sequence Completed" once connected. The profile
 holds a client key: keep it in `dev/.local/`. Clean up with `docker rm -f vpn-client` and
-`docker exec as-3-2-2 sacli --user "qa vpn test user" UserPropDelAll`.
+`docker exec as-latest sacli --user "qa vpn test user" UserPropDelAll`.
 
 ## Rebuilding the fixtures (no Admin UI needed)
 
@@ -152,7 +152,7 @@ them again. If a run is killed half-way, remove them by hand:
 `docker exec <stand> sacli --key auth.ldap.0.bind_pw ConfigDel` (same for the other key).
 
 Five wrong passwords or codes lock the account for 15 minutes; clear it with
-`docker exec as-3-2-2 sacli stop && docker exec as-3-2-2 sacli start` (same for `as-3-1-0`).
+`docker exec as-latest sacli stop && docker exec as-latest sacli start` (same for `as-3-1-0`).
 
 Real token lifetime: `make live-slow` (`OPENVPN_AS_LIVE=1 OPENVPN_AS_LIVE_SLOW=1`) adds the
 test that logs in as `mfa-admin` with a TOTP code, waits past the 10-minute token expiry and
@@ -165,7 +165,7 @@ macOS); a sleeping laptop stops the renewal timer and the test fails for that re
 Unit tests prove what the tools return; they cannot prove what an agent does with it. After a
 change to the server instructions or a tool description, ask a real agent:
 
-    uv run python dev/evals.py                  # 11 questions x 3 runs on as-3-2-2, ~10 minutes
+    uv run python dev/evals.py                  # 11 questions x 3 runs on as-latest, ~10 minutes
     uv run python dev/evals.py --case password-reveal --runs 5
 
 Needs Claude Code (`claude`) logged in, `uv sync` and `dev/.local/<stand>.env`. Each run is

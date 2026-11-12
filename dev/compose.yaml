@@ -1,9 +1,9 @@
 # Disposable Access Server instances for the as-mcp-server dev loop.
 # Only the Admin UI / Web API port (943) is published; VPN ports are not needed for API tests.
 services:
-  as-3-2-2:
+  as-latest:
     image: openvpn/openvpn-as:3.2.3-8444f22d-Ubuntu26
-    container_name: as-3-2-2
+    container_name: as-latest
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -12,7 +12,7 @@ services:
     ports:
       - "943:943"
     volumes:
-      - as-3-2-2-data:/openvpn
+      - as-latest-data:/openvpn
     restart: unless-stopped
 
   # Compatibility target (minimum supported version). Start on demand:
@@ -45,5 +45,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  as-3-2-2-data:
+  as-latest-data:
   as-3-1-0-data:

@@ -19,7 +19,7 @@ from as_mcp_server.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL = ROOT / "dev" / ".local"
-STANDS = ["as-3-2-2", "as-3-1-0"]
+STANDS = ["as-latest", "as-3-1-0"]
 
 
 def pytest_collection_modifyitems(

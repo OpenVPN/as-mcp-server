@@ -1,6 +1,6 @@
 """Create the dev-stand fixtures the live tests expect, without opening the Admin UI.
 
-Usage: uv run python dev/seed_fixtures.py [as-3-2-2] [as-3-1-0]   (default: both)
+Usage: uv run python dev/seed_fixtures.py [as-latest] [as-3-1-0]   (default: both)
 
 Idempotent: objects that already exist are left alone. Needs the containers from
 dev/compose.yaml running and dev/.local/<stand>.env with the admin credentials.
@@ -23,7 +23,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / "dev" / ".local"
-STANDS = ("as-3-2-2", "as-3-1-0")
+STANDS = ("as-latest", "as-3-1-0")
 GROUP = "staff"
 RULESET = {"name": "Staff web", "comment": "dev-stand fixture"}
 RADIUS_USER = "radius-admin"

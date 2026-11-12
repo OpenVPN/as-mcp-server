@@ -41,7 +41,9 @@ def _count_logins(client) -> list[str | None]:
 async def _mfa_client(name: str, tmp_path: Path) -> tuple[AccessServerClient, str]:
     mfa = read_env_file(LOCAL / "mfa-admin.env")
     secret = mfa[
-        "MFA_ADMIN_TOTP_SECRET" if name == "as-3-2-2" else "MFA_ADMIN_TOTP_SECRET_3_1_0"
+        "MFA_ADMIN_TOTP_SECRET"
+        if name == "as-latest"
+        else "MFA_ADMIN_TOTP_SECRET_3_1_0"
     ]
     settings = settings_for(
         f"{name}.env", tmp_path, user="mfa-admin", password=mfa["OPENVPN_AS_PASSWORD"]

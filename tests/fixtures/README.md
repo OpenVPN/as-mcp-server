@@ -2,7 +2,7 @@
 
 Real responses captured from the dev stand (`dev/compose.yaml`), on 2026-09-09 unless the note
 gives a later date:
-`as-3-2-2` = Access Server 3.2.2 (413ca39f) until 2026-11-12, then 3.2.3 (8444f22d); `as-3-1-0` = Access Server 3.1.0 (e22fe316). Unless the
+`as-latest` (named `as-3-2-2` until 2026-11-12) = Access Server 3.2.2 (413ca39f) until 2026-11-12, then 3.2.3 (8444f22d); `as-3-1-0` = Access Server 3.1.0 (e22fe316). Unless the
 note names another version, a fixture comes from 3.2.2. Every file has the shape
 `{"status": <HTTP status>, "note": "<how it was produced>", "body": <JSON body>}`.
 
