@@ -830,12 +830,12 @@ class AccessServerClient:
                 return response.text
             if not response.content:
                 return None
-            data = _json_or_none(response)
-            if data is None:
+            try:
+                return response.json()
+            except ValueError:
                 raise ToolError(
                     MSG_NON_JSON.format(method=method, path=path, status=status)
-                )
-            return data
+                ) from None
         body = _json_or_none(response)
         reason = _reason(body, response.text)
         if status == 401:

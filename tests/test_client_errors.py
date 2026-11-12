@@ -352,3 +352,16 @@ async def test_post_sends_an_empty_list_as_an_array_not_an_object() -> None:
     await client.post("/profiles/delete", [])
     (request,) = router.sent(*PROFILE_DELETE)
     assert request.content == b"[]"
+
+
+async def test_a_json_null_answer_is_none_not_a_non_json_error() -> None:
+    """Measured 2026-11-12 on 3.1.0 and 3.2.3: /userprop/set answers 200 `null`."""
+    userprop = ("POST", "/api/userprop/set")
+    client, _ = client_with(
+        {
+            userprop: lambda request: httpx.Response(
+                200, content=b"null", headers={"content-type": "application/json"}
+            )
+        }
+    )
+    assert await client.post("/userprop/set", [{"name": "alice"}]) is None
