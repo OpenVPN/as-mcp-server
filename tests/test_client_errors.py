@@ -6,8 +6,15 @@ import httpx
 import pytest
 from fastmcp.exceptions import ToolError
 
-from as_mcp_server.client import AccessServerClient
-from tests.conftest import LOGIN, MFAAUTH, Router, load_fixture, make_config
+from as_mcp_server.client import AccessServerClient, RequestTimeoutError
+from tests.conftest import (
+    LOGIN,
+    MFAAUTH,
+    Router,
+    body_of,
+    load_fixture,
+    make_config,
+)
 
 USERS = ("POST", "/api/users/list")
 
@@ -232,3 +239,116 @@ async def test_a_secret_inside_a_400_detail_is_redacted() -> None:
         await client.post("/users/list")
     assert "LEAK-pw" not in str(exc_info.value)
     assert "password: <redacted>" in str(exc_info.value)
+
+
+PROFILE_CREATE = ("POST", "/api/profiles/create")
+PROFILE_DELETE = ("POST", "/api/profiles/delete")
+REPORT = ("GET", "/api/support/report")
+OVPN = "client\nremote as.example 1194\n<key>\nPRIVATE\n</key>\n"
+
+
+def read_timeout(request: httpx.Request) -> float:
+    return request.extensions["timeout"]["read"]
+
+
+async def test_post_text_returns_the_body_of_a_non_json_2xx() -> None:
+    def created(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            201, text=OVPN, headers={"content-type": "application/x-openvpn-profile"}
+        )
+
+    client, router = client_with({PROFILE_CREATE: created})
+    body = {"username": "alice", "profile_type": "userlogin"}
+    assert await client.post_text("/profiles/create", body) == OVPN
+    (request,) = router.sent(*PROFILE_CREATE)
+    assert body_of(request) == body
+    assert request.headers["accept"] == "*/*"
+
+
+async def test_get_text_returns_an_empty_string_for_an_empty_2xx() -> None:
+    client, _ = client_with({REPORT: (200, None)})
+    assert await client.get_text("/support/report") == ""
+
+
+async def test_a_text_call_is_retried_once_after_a_401() -> None:
+    client, router = client_with(
+        {
+            REPORT: [
+                load_fixture("error_invalid_token_401"),
+                lambda request: httpx.Response(200, text="report"),
+            ]
+        }
+    )
+    assert await client.get_text("/support/report") == "report"
+    assert len(router.sent(*REPORT)) == 2
+
+
+async def test_a_text_call_reports_an_error_status_like_a_json_call() -> None:
+    client, _ = client_with({PROFILE_CREATE: (400, {"reason": "No such user"})})
+    with pytest.raises(ToolError) as exc_info:
+        await client.post_text("/profiles/create", {"username": "nobody"})
+    assert str(exc_info.value) == (
+        "Access Server rejected POST /profiles/create (400): No such user"
+    )
+
+
+async def test_a_json_call_still_refuses_a_non_json_2xx() -> None:
+    client, _ = client_with(
+        {PROFILE_CREATE: lambda request: httpx.Response(201, text=OVPN)}
+    )
+    with pytest.raises(ToolError, match="non-JSON response to POST /profiles/create"):
+        await client.post("/profiles/create", {"username": "alice"})
+
+
+async def test_a_per_call_timeout_applies_to_that_request_only() -> None:
+    client, router = client_with(
+        {
+            REPORT: lambda request: httpx.Response(200, text="report"),
+            USERS: (200, {"total": 0}),
+        }
+    )
+    await client.get_text("/support/report", timeout=300)
+    await client.post("/users/list")
+    (login,) = router.sent(*LOGIN)
+    (report,) = router.sent(*REPORT)
+    (users,) = router.sent(*USERS)
+    assert read_timeout(report) == 300
+    assert read_timeout(login) == 30
+    assert read_timeout(users) == 30
+
+
+async def test_a_per_call_timeout_never_shortens_the_configured_one() -> None:
+    router = Router({LOGIN: load_fixture("login_ok"), USERS: (200, {"total": 0})})
+    client = AccessServerClient(make_config(timeout=600), transport=router.transport())
+    await client.post("/users/list", timeout=300)
+    (users,) = router.sent(*USERS)
+    assert read_timeout(users) == 600
+
+
+async def test_a_timed_out_call_raises_request_timeout_error() -> None:
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    client, _ = client_with({REPORT: slow, USERS: slow})
+    with pytest.raises(RequestTimeoutError) as exc_info:
+        await client.get_text("/support/report", timeout=300)
+    assert isinstance(exc_info.value, ToolError)
+    assert "did not answer within 300s (GET /support/report)" in str(exc_info.value)
+    with pytest.raises(
+        RequestTimeoutError, match=r"did not answer within 30s \(POST /users/list\)"
+    ):
+        await client.post("/users/list")
+
+
+async def test_post_sends_a_list_body_as_a_json_array() -> None:
+    client, router = client_with({PROFILE_DELETE: (204, None)})
+    assert await client.post("/profiles/delete", ["1", "2"]) is None
+    (request,) = router.sent(*PROFILE_DELETE)
+    assert body_of(request) == ["1", "2"]
+
+
+async def test_post_sends_an_empty_list_as_an_array_not_an_object() -> None:
+    client, router = client_with({PROFILE_DELETE: (204, None)})
+    await client.post("/profiles/delete", [])
+    (request,) = router.sent(*PROFILE_DELETE)
+    assert request.content == b"[]"

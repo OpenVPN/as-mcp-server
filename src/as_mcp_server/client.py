@@ -200,6 +200,10 @@ class MfaRequiredError(ToolError):
     """
 
 
+class RequestTimeoutError(ToolError):
+    """The server did not answer in time, so the outcome of the call is unknown."""
+
+
 class MfaEnrollmentRequiredError(ToolError):
     """The account has MFA enabled but never enrolled.
 
@@ -452,11 +456,24 @@ class AccessServerClient:
             await self._http.aclose()
             self._http = None
 
-    async def get(self, path: str) -> Any:
-        return await self._request("GET", path, None)
+    async def get(self, path: str, *, timeout: float | None = None) -> Any:
+        return await self._request("GET", path, None, timeout=timeout)
 
-    async def post(self, path: str, body: dict[str, Any] | None = None) -> Any:
-        return await self._request("POST", path, {} if body is None else body)
+    async def post(
+        self, path: str, body: Any = None, *, timeout: float | None = None
+    ) -> Any:
+        return await self._request(
+            "POST", path, {} if body is None else body, timeout=timeout
+        )
+
+    async def get_text(self, path: str, *, timeout: float | None = None) -> str:
+        """The body of a 2xx answer as text, whatever its content type."""
+        return await self._request("GET", path, None, timeout=timeout, text=True)
+
+    async def post_text(self, path: str, body: Any = None) -> str:
+        return await self._request(
+            "POST", path, {} if body is None else body, text=True
+        )
 
     async def login(self, totp_code: str | None = None) -> dict[str, Any]:
         """Authenticate now.
@@ -473,15 +490,27 @@ class AccessServerClient:
     # -- internals --
 
     async def _request(
-        self, method: str, path: str, body: dict[str, Any] | None
+        self,
+        method: str,
+        path: str,
+        body: Any,
+        *,
+        timeout: float | None = None,
+        text: bool = False,
     ) -> Any:
         await self._ensure_token()
         await self._renew_if_about_to_expire()
-        response = await self._send(method, path, body, token=self._token)
+
+        async def send() -> httpx.Response:
+            return await self._send(
+                method, path, body, token=self._token, timeout=timeout, text=text
+            )
+
+        response = await send()
         if response.status_code == 401:
             await self._reauthenticate()
-            response = await self._send(method, path, body, token=self._token)
-        return self._decode(method, path, response)
+            response = await send()
+        return self._decode(method, path, response, text=text)
 
     async def _ensure_token(self) -> None:
         if self._token is None:
@@ -749,23 +778,37 @@ class AccessServerClient:
         return self._http
 
     async def _send(
-        self, method: str, path: str, body: dict[str, Any] | None, *, token: str | None
+        self,
+        method: str,
+        path: str,
+        body: Any,
+        *,
+        token: str | None,
+        timeout: float | None = None,
+        text: bool = False,
     ) -> httpx.Response:
+        """`timeout` raises the configured budget for this request, never lowers it."""
         headers = {"X-OpenVPN-As-AuthToken": token} if token else {}
+        if text:
+            headers["Accept"] = "*/*"
+        cfg = self._config
+        budget = cfg.timeout if timeout is None else max(cfg.timeout, timeout)
         started = time.monotonic()
         try:
             response = await self._http_client().request(
-                method, path, json=body, headers=headers
+                method,
+                path,
+                json=body,
+                headers=headers,
+                timeout=httpx.Timeout(budget, connect=min(10.0, cfg.timeout)),
             )
         except httpx.ConnectError as exc:
             if _is_tls_failure(exc):
                 raise ToolError(MSG_TLS.format(url=self._config.url)) from exc
             raise ToolError(MSG_CONNECT.format(url=self._config.url, exc=exc)) from exc
         except httpx.TimeoutException as exc:
-            raise ToolError(
-                MSG_TIMEOUT.format(
-                    timeout=self._config.timeout, method=method, path=path
-                )
+            raise RequestTimeoutError(
+                MSG_TIMEOUT.format(timeout=budget, method=method, path=path)
             ) from exc
         except httpx.HTTPError as exc:
             raise ToolError(MSG_HTTP.format(method=method, path=path, exc=exc)) from exc
@@ -778,9 +821,13 @@ class AccessServerClient:
         )
         return response
 
-    def _decode(self, method: str, path: str, response: httpx.Response) -> Any:
+    def _decode(
+        self, method: str, path: str, response: httpx.Response, *, text: bool = False
+    ) -> Any:
         status = response.status_code
         if 200 <= status < 300:
+            if text:
+                return response.text
             if not response.content:
                 return None
             data = _json_or_none(response)
