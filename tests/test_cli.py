@@ -102,7 +102,7 @@ def test_setup_verifies_then_stores_profile_and_password(
     assert cli.main(["setup"]) == 0
     out = capsys.readouterr().out
     assert (
-        "Connected to Access Server 3.2.2 at https://vpn.example.com:943 as openvpn."
+        "Connected to Access Server 3.2.3 at https://vpn.example.com:943 as openvpn."
         in out
     )
     assert "password stored in the OS keyring" in out
@@ -219,7 +219,7 @@ def test_check_reports_url_user_server_and_sources(
     assert "URL:      https://vpn.example.com:943 (from profile)" in out
     assert "User:     openvpn (from profile); password from keyring" in out
     assert "TLS:      verified" in out
-    assert "Server:   Access Server 3.2.2 (413ca39f) on Ubuntu 24.04.4 LTS" in out
+    assert "Server:   Access Server 3.2.3 (8444f22d) on Ubuntu 26.04.1 LTS" in out
     assert "MemoryKeyring" in out
     assert "check-test-password" not in out
 

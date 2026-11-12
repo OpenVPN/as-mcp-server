@@ -2,8 +2,8 @@
 
 Real responses captured from the dev stand (`dev/compose.yaml`), on 2026-09-09 unless the note
 gives a later date:
-`as-3-2-2` = Access Server 3.2.2 (413ca39f), `as-3-1-0` = Access Server 3.1.0 (e22fe316). Unless the
-note says `3.1.0`, a fixture comes from 3.2.2. Every file has the shape
+`as-3-2-2` = Access Server 3.2.2 (413ca39f) until 2026-11-12, then 3.2.3 (8444f22d); `as-3-1-0` = Access Server 3.1.0 (e22fe316). Unless the
+note names another version, a fixture comes from 3.2.2. Every file has the shape
 `{"status": <HTTP status>, "note": "<how it was produced>", "body": <JSON body>}`.
 
 Sanitised: every auth token is `SESS_TOKEN_test`; the TOTP secret is the RFC example value
@@ -57,7 +57,7 @@ on purpose: tests assert that the server redacts them.
 | `mfaauth_radius_ok.json` | 200 | 3.2.2: RADIUS challenge answered with the correct PIN through /auth/login/mfaauth |
 | `mfaauth_replayed_code.json` | 403 | 3.2.2: same TOTP code used twice within one 30 s window |
 | `mfaauth_replayed_code_3_1_0.json` | 403 | 3.1.0: same TOTP code used twice within one 30 s window |
-| `server_info.json` | 200 |  |
+| `server_info.json` | 200 | AS 3.2.3 (8444f22d), captured 2026-11-12 after the stand moved from 3.2.2 |
 | `server_info_3_1_0.json` | 200 | AS 3.1.0 |
 | `server_status.json` | 200 |  |
 | `status_overview.json` | 200 | empty names |

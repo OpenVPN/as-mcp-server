@@ -2,7 +2,7 @@
 # Only the Admin UI / Web API port (943) is published; VPN ports are not needed for API tests.
 services:
   as-3-2-2:
-    image: openvpn/openvpn-as:3.2.2-413ca39f-Ubuntu24
+    image: openvpn/openvpn-as:3.2.3-8444f22d-Ubuntu26
     container_name: as-3-2-2
     devices:
       - /dev/net/tun:/dev/net/tun

@@ -137,7 +137,7 @@ async def test_connection_info_reports_server_session_sources_and_tls(
     async with Client(mcp) as client:
         result = (await client.call_tool("connection_info", {})).structured_content
     assert result["url"] == "https://as.example:943" and result["username"] == "openvpn"
-    assert result["server"]["version"] == "3.2.2"
+    assert result["server"]["version"] == "3.2.3"
     assert result["session"]["authenticated"] is True
     assert result["session"]["expires_after"] == "2026-09-09T20:58:48.000000Z"
     assert result["config"]["url_source"] == "env"
@@ -202,7 +202,7 @@ async def test_login_answers_the_challenge_and_later_calls_reuse_the_token(
         ).structured_content
         assert login["mfa_used"] is True and login["authenticated_user"] == "mfa-admin"
         info = (await client.call_tool("connection_info", {})).structured_content
-    assert info["server"]["version"] == "3.2.2" and info["error"] is None
+    assert info["server"]["version"] == "3.2.3" and info["error"] is None
     assert len(router.sent("POST", "/api/auth/login/mfaauth")) == 1
 
 

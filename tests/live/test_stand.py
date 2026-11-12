@@ -39,7 +39,7 @@ async def test_every_tool_answers_on_both_servers(stand) -> None:
         assert {tool.name for tool in await client.list_tools()} == EXPECTED_TOOLS
     info = await call(mcp, "connection_info")
     assert info["error"] is None and info["session"]["authenticated"] is True
-    expected_version = "3.2.2" if name == "as-3-2-2" else "3.1.0"
+    expected_version = "3.2.3" if name == "as-3-2-2" else "3.1.0"
     assert info["server"]["version"] == expected_version
     assert (await call(mcp, "get_server_info"))["version"] == expected_version
     assert "service_status" in await call(mcp, "get_server_status")
@@ -125,7 +125,7 @@ def test_the_check_command_reports_the_real_server(
     monkeypatch.setenv("OPENVPN_AS_CONFIG_DIR", str(settings.config_dir))
     assert cli.main(["check"]) == 0
     assert (
-        f"Access Server {'3.2.2' if name == 'as-3-2-2' else '3.1.0'}"
+        f"Access Server {'3.2.3' if name == 'as-3-2-2' else '3.1.0'}"
         in capsys.readouterr().out
     )
 
