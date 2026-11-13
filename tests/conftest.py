@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import keyring
@@ -13,6 +13,8 @@ import keyring.backend
 import keyring.backends.fail
 import keyring.errors
 import pytest
+from fastmcp import Client, FastMCP
+from fastmcp.client.elicitation import ElicitResult
 
 from as_mcp_server.config import ResolvedConfig
 
@@ -131,3 +133,46 @@ def make_config(**overrides: Any) -> ResolvedConfig:
 
 def body_of(request: httpx.Request) -> Any:
     return json.loads(request.content) if request.content else None
+
+
+Answer = Literal["accept", "no", "decline", "cancel", "none"]
+MODES = ("legacy", "2026-07-28")
+
+
+def elicitation_handler(answer: Answer, seen: list[str] | None = None):
+    """A client-side approval prompt that always gives `answer`.
+
+    "accept" ticks every yes/no box of the form, "no" submits it unticked; "decline"
+    and "cancel" are the two ways to refuse. The prompt texts go to `seen`.
+    """
+
+    async def handler(message, response_type, params, context):
+        if seen is not None:
+            seen.append(message)
+        if answer in ("decline", "cancel"):
+            return ElicitResult(action=answer)
+        fields = params.requested_schema.get("properties", {})
+        return ElicitResult(
+            action="accept", content=dict.fromkeys(fields, answer == "accept")
+        )
+
+    return handler
+
+
+async def call_tool(
+    mcp: FastMCP,
+    name: str,
+    args: dict[str, Any] | None = None,
+    *,
+    mode: str = "legacy",
+    answer: Answer = "accept",
+    seen: list[str] | None = None,
+) -> Any:
+    """Call a tool through the in-process FastMCP Client and return its structured
+    result. `mode` is "legacy" or "2026-07-28"; `answer` "none" builds the Client
+    without an elicitation handler, which is an app that cannot show a prompt."""
+    options: dict[str, Any] = {"mode": mode}
+    if answer != "none":
+        options["elicitation_handler"] = elicitation_handler(answer, seen)
+    async with Client(mcp, **options) as client:
+        return (await client.call_tool(name, args or {})).structured_content
