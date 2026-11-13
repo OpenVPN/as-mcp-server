@@ -68,6 +68,8 @@ DATA_TOOLS = [
     ("get_default_user", {}, ("GET", "/api/users/defaultuser")),
     ("list_access_rulesets", {}, ("POST", "/api/access/rulesets/list")),
     ("list_access_rules", {"ruleset_ids": [1]}, ("POST", "/api/access/rules/list")),
+    ("list_connection_profiles", {}, ("POST", "/api/profiles/list")),
+    ("list_access_lists", {}, ("POST", "/api/userprop/access/list")),
 ]
 
 

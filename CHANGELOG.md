@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Two read tools: `list_connection_profiles` (who holds which connection profile; never
+  the profile file or its key; serials are strings of digits) and `list_access_lists`
+  (IP/subnet access lists of users and groups, with a note that the global IP/subnet
+  rules are not visible through the API). The thirteen tools of 0.1.0 are unchanged.
+- Settings `OPENVPN_AS_WRITE_TOOLS`, `OPENVPN_AS_APPROVAL` and `OPENVPN_AS_OUTPUT_DIR`,
+  shown by `connection_info` and `as-mcp-server check`. No write tool exists yet.
+
+### Changed
+- An Access Server version that cannot be read is treated as below the supported
+  minimum.
+- FastMCP 4.1 or newer is required.
+
 ## [0.1.0] - 2026-10-05
 
 First public release. Read-only: no tool changes anything on the server.

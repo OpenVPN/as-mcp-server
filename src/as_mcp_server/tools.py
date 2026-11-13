@@ -19,6 +19,7 @@ from pydantic import Field
 from as_mcp_server import __version__
 from as_mcp_server.client import ClientHolder, redact
 from as_mcp_server.config import describe
+from as_mcp_server.texts import NOTE_GLOBAL_IP
 from as_mcp_server.untrusted import check_log_reports, check_vpn_status
 from as_mcp_server.versions import (
     MINIMUM_VERSION,
@@ -87,6 +88,8 @@ def register_tools(mcp: FastMCP, holder: ClientHolder) -> None:
     _register_log_tools(mcp, holder)
     _register_directory_tools(mcp, holder)
     _register_access_tools(mcp, holder)
+    _register_profile_tools(mcp, holder)
+    _register_access_list_tools(mcp, holder)
 
 
 def _register_diagnostics(mcp: FastMCP, holder: ClientHolder) -> None:
@@ -684,3 +687,121 @@ def _register_access_tools(mcp: FastMCP, holder: ClientHolder) -> None:
         if filters:
             body["filters"] = filters
         return redact(await holder.get().post("/access/rules/list", body))
+
+
+def _register_profile_tools(mcp: FastMCP, holder: ClientHolder) -> None:
+    @mcp.tool(
+        name="list_connection_profiles",
+        description=(
+            "Connection profiles (client certificates) issued on the Access Server, "
+            "sorted by serial: serial, username, profile_type (autologin, userlogin, "
+            "generic, epki-generic), common_name, comment, not_before, not_after, "
+            "last_used (a date, no time of day) and tls_crypt_v2. Only this "
+            "description of each profile; the profile file and its private key are "
+            "never returned. serial is a string of digits, not a number: copy it "
+            "exactly. Filters: username (exact), autologin_only. Returns 'profiles' "
+            "and 'total'."
+        ),
+        annotations=READ,
+        tags={"read"},
+    )
+    async def list_connection_profiles(
+        page_size: PageSize = 50,
+        offset: Offset = 0,
+        username: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Exact, case-sensitive username; only the profiles of this user "
+                    "(the API's username filter, operation equal). Omit for every "
+                    "user."
+                )
+            ),
+        ] = None,
+        autologin_only: Annotated[
+            bool,
+            Field(
+                description=(
+                    "true returns only autologin profiles, which connect without a "
+                    "password (the API's boolean autologin filter)."
+                )
+            ),
+        ] = False,
+        sort: SortParam = "asc",
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {}
+        if username:
+            filters["username"] = {"operation": "equal", "value": username}
+        if autologin_only:
+            filters["autologin"] = {"value": True}
+        body: dict[str, Any] = {
+            "page_size": page_size,
+            "offset": offset,
+            "order_by": "serial",
+            "sort_by": sort,
+        }
+        if filters:
+            body["filters"] = filters
+        result = redact(await holder.get().post("/profiles/list", body))
+        profiles = result.get("profiles") if isinstance(result, dict) else None
+        for profile in profiles if isinstance(profiles, list) else []:
+            if isinstance(profile, dict) and profile.get("serial") is not None:
+                profile["serial"] = str(profile["serial"])
+        return result
+
+
+def _register_access_list_tools(mcp: FastMCP, holder: ClientHolder) -> None:
+    @mcp.tool(
+        name="list_access_lists",
+        description=(
+            "IP/subnet access lists set on users and groups (not the rulesets of "
+            "list_access_rulesets). Each entry in 'profiles' carries username or "
+            "groupname, type (access_to_ipv4, access_to_ipv6, access_from_ipv4, "
+            "access_from_ipv6) and access_route: type (route, nat, user, group, all, "
+            "all_vpn_clients, all_s2c_subnets), accept (true allows, false denies) "
+            "and, for route and nat, subnet with netip, prefix_length and service (an "
+            "empty service list means every protocol and port). Omit usernames and "
+            "group_names for every entry; give one or both for only the named users "
+            "and groups. A user also gets the entries of the user's group, so ask "
+            "for both. 'note' says what this list cannot show: the global IP/subnet "
+            "rules."
+        ),
+        annotations=READ,
+        tags={"read"},
+    )
+    async def list_access_lists(
+        usernames: Annotated[
+            list[str] | None,
+            Field(
+                description=(
+                    "Exact, case-sensitive usernames whose access lists to fetch "
+                    "(the API's users list). Names without an access list are "
+                    "silently absent from the response."
+                )
+            ),
+        ] = None,
+        group_names: Annotated[
+            list[str] | None,
+            Field(
+                description=(
+                    "Exact group names whose access lists to fetch (the API's "
+                    "groups list). Names without an access list are silently "
+                    "absent from the response."
+                )
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if usernames:
+            body["users"] = list(usernames)
+        if group_names:
+            body["groups"] = list(group_names)
+        # `users` alone still returns every group entry, and the other way round.
+        if usernames and not group_names:
+            body["filters"] = {"object_type": "user"}
+        elif group_names and not usernames:
+            body["filters"] = {"object_type": "group"}
+        result = redact(await holder.get().post("/userprop/access/list", body))
+        if not isinstance(result, dict):
+            result = {"profiles": result}
+        return {**result, "note": NOTE_GLOBAL_IP}

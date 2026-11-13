@@ -93,7 +93,7 @@ CASES = (
         "version",
         "Which Access Server version is this?",
         calls_any=("get_server_info", "connection_info", "get_status_overview"),
-        says=(r"3\.2\.2",),
+        says=(r"3\.2\.4",),
     ),
     Case(
         "admins",
@@ -104,8 +104,9 @@ CASES = (
     Case(
         "reach",
         "What can user alice reach over the VPN?",
-        calls_all=("list_access_rulesets", "list_access_rules"),
-        says=(r"Staff web",),
+        calls_all=("list_access_rulesets", "list_access_rules", "list_access_lists"),
+        # The ruleset, both access-list subnets, and where the global rules are.
+        says=(r"Staff web", r"10\.20\.0\.0", r"10\.30\.0\.5", r"Admin UI"),
     ),
     Case(
         "lockout",

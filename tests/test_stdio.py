@@ -58,7 +58,7 @@ def _talk(process: subprocess.Popen[str], messages: list[dict]) -> list[str]:
     return lines
 
 
-def test_stdout_is_only_jsonrpc_and_lists_the_thirteen_tools(tmp_path: Path) -> None:
+def test_stdout_is_only_jsonrpc_and_lists_the_fifteen_tools(tmp_path: Path) -> None:
     env = {
         name: value
         for name, value in os.environ.items()

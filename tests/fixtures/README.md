@@ -12,11 +12,14 @@ on purpose: tests assert that the server redacts them.
 
 | file | status | note |
 | --- | --- | --- |
+| `access_lists.json` | 200 | 3.2.4: every access list: a route for group staff, a nat entry for alice (captured 2026-11-13) |
+| `access_lists_3_1_0.json` | 200 | the same on 3.1.0 |
 | `access_rules.json` | 200 | rules of the staff ruleset |
 | `access_rules_filter_type.json` | 200 | type + match_data filters |
 | `access_rulesets_all.json` | 200 | no owner = everything |
 | `access_rulesets_default.json` | 200 | global owner spelled __DEFAULT__ |
 | `access_rulesets_staff.json` | 200 | group owner |
+| `contract_0_1_0.json` | - | not a server response: the tool list of tag `v0.1.0` (name, description, inputSchema, annotations), dumped through an in-memory MCP client; `tests/test_contract.py` compares against it |
 | `default_user.json` | 200 |  |
 | `error_bad_owner_400.json` | 400 | documented DEFAULT is rejected |
 | `error_bad_ruleset_400.json` | 400 |  |
@@ -58,6 +61,8 @@ on purpose: tests assert that the server redacts them.
 | `mfaauth_replayed_code.json` | 403 | 3.2.2: same TOTP code used twice within one 30 s window |
 | `mfaauth_replayed_code_3_1_0.json` | 403 | 3.1.0: same TOTP code used twice within one 30 s window |
 | `server_info.json` | 200 | AS 3.2.4 (f3c295a7), captured 2026-11-13 after the stand moved from 3.2.3 |
+| `profiles_list.json` | 200 | 3.2.4: all connection profiles ordered by serial; serials arrive as strings (captured 2026-11-13) |
+| `profiles_list_3_1_0.json` | 200 | the same on 3.1.0 |
 | `server_info_3_1_0.json` | 200 | AS 3.1.0 |
 | `server_status.json` | 200 |  |
 | `status_overview.json` | 200 | empty names |

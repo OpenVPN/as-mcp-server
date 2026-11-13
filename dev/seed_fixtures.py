@@ -5,8 +5,9 @@ Usage: uv run python dev/seed_fixtures.py [as-latest] [as-3-1-0]   (default: bot
 Idempotent: objects that already exist are left alone. Needs the containers from
 dev/compose.yaml running and dev/.local/<stand>.env with the admin credentials.
 Users and the group are created through `docker exec <stand> sacli` (a group is a
-user record with type=group and group_declare=true); the ruleset and its rules go
-through the Web API. The MFA admin is set up by hand, see dev/README.md.
+user record with type=group and group_declare=true); the ruleset and its rules, the
+connection profile of alice and the access list of the group go through the Web
+API. The MFA admin is set up by hand, see dev/README.md.
 """
 
 from __future__ import annotations
@@ -26,6 +27,27 @@ LOCAL = ROOT / "dev" / ".local"
 STANDS = ("as-latest", "as-3-1-0")
 GROUP = "staff"
 RULESET = {"name": "Staff web", "comment": "dev-stand fixture"}
+PROFILE_USER = "alice"
+ACCESS_ENTRIES = [
+    {
+        "groupname": GROUP,
+        "type": "access_to_ipv4",
+        "access_route": {
+            "type": "route",
+            "accept": True,
+            "subnet": {"ipv6": False, "netip": "10.20.0.0", "prefix_length": 24},
+        },
+    },
+    {
+        "username": PROFILE_USER,
+        "type": "access_to_ipv4",
+        "access_route": {
+            "type": "nat",
+            "accept": True,
+            "subnet": {"ipv6": False, "netip": "10.30.0.5", "prefix_length": 32},
+        },
+    },
+]
 RADIUS_USER = "radius-admin"
 RADIUS_CONFIG = {
     "auth.radius.0.name": "dev-radius",
@@ -200,6 +222,44 @@ async def seed(stand: str) -> None:
             log(f"rules added: {[r['match_data'] for r in missing]}")
         else:
             log("rules: present")
+
+        owned = await post(
+            "/profiles/list",
+            {
+                "page_size": 1,
+                "offset": 0,
+                "filters": {"username": {"operation": "equal", "value": PROFILE_USER}},
+            },
+        )
+        if owned["total"]:
+            log(f"connection profile of {PROFILE_USER}: present")
+        else:
+            # The answer is the profile itself (a private key); it is not kept.
+            created = await http.post(
+                "/profiles/create",
+                json={
+                    "username": PROFILE_USER,
+                    "profile_type": "userlogin",
+                    "comment": "dev-stand fixture",
+                },
+                headers=headers,
+            )
+            created.raise_for_status()
+            log(f"connection profile of {PROFILE_USER}: created")
+
+        lists = (await post("/userprop/access/list", {}))["profiles"]
+        owners = {e.get("username") or e.get("groupname") for e in lists}
+        for entry in ACCESS_ENTRIES:
+            owner = entry.get("username") or entry["groupname"]
+            if owner in owners:
+                log(f"access list of {owner}: present")
+            else:
+                await post("/userprop/access/set", {"items_append": [entry]})
+                subnet = entry["access_route"]["subnet"]
+                log(
+                    f"access list of {owner}: "
+                    f"{subnet['netip']}/{subnet['prefix_length']} added"
+                )
 
 
 async def wait_for_api(base: str) -> None:

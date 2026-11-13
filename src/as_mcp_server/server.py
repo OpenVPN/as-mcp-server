@@ -54,7 +54,11 @@ INSTRUCTIONS = (
     "list_access_rulesets(owner=X) for\n"
     "the user, then for each group the user belongs to, then "
     'owner="__DEFAULT__"; collect the ruleset\n'
-    "ids and call list_access_rules(ruleset_ids=[...]).\n"
+    "ids and call list_access_rules(ruleset_ids=[...]); then "
+    "list_access_lists(usernames=[X],\n"
+    "group_names=[the user's group]) for the IPv4 subnet rules, and report both. "
+    "Global IP/subnet rules\n"
+    "are not visible through the API; say so and point to the Admin UI for them.\n"
     "When asked whether user X is locked out, call get_log_reports(username=X, "
     "errors_only=true,\n"
     'since="24h") and list_users(usernames=[X]) right away, without asking, and '

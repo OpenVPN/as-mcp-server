@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "note": "3.1.0: no users or groups = every access list (captured 2026-11-13)",
+  "body": {
+    "profiles": [
+      {
+        "username": "alice",
+        "access_route": {
+          "type": "nat",
+          "accept": true,
+          "subnet": {
+            "ipv6": false,
+            "netip": "10.30.0.5",
+            "prefix_length": 32,
+            "service": []
+          }
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "groupname": "staff",
+        "access_route": {
+          "type": "route",
+          "accept": true,
+          "subnet": {
+            "ipv6": false,
+            "netip": "10.20.0.0",
+            "prefix_length": 24,
+            "service": []
+          }
+        },
+        "type": "access_to_ipv4"
+      }
+    ]
+  }
+}

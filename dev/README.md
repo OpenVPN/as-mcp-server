@@ -65,7 +65,7 @@ results per tool and the lockout reset are in the next section.
 
 ## Tools and test prompts for the stand
 
-All 13 tools, one or two English prompts each, and what the stand answers. Results
+All 15 read-mode tools, one or two English prompts each, and what the stand answers. Results
 are the same on 3.2.4 (`:943`) and 3.1.0 (`:944`) unless a cell says otherwise. Numbers for
 logs grow with every API login. `list_access_rules` replaces the original plan's
 `list_access_policysets` (that endpoint does not exist on 3.1–3.2.3).
@@ -85,6 +85,8 @@ logs grow with every API login. `list_access_rules` replaces the original plan's
 | `get_default_user` | "What does every user inherit by default?" | the `__DEFAULT__` profile with 11 properties (`deny`, `autologin`, `reroute_gw`, ...). |
 | `list_access_rulesets` | "Which rulesets are assigned to group staff?" / "Show the global rulesets." / "Rulesets of owner DEFAULT." | `id: 1`, `Staff web`, `position: 100`, comment `dev-stand fixture`; `__DEFAULT__`: `[]`; `DEFAULT`: error "Non-existent ruleset owner: DEFAULT" from the server. |
 | `list_access_rules` | "What can alice reach?" / "Rules of ruleset 999999." | chain `list_users` → `list_access_rulesets(owner=staff)` → rules of ruleset 1: `intranet.example.com` → `nat` (`domain_or_subdomain`), `blocked.example.com` → `deny` (`domain`); unknown id: "Non-existent ruleset: 999999"; an empty id list is refused before any request. |
+| `list_connection_profiles` | "Which connection profiles exist?" / "Profiles of alice." / "Only autologin profiles." | `total: 2`: `alice` (`userlogin`, comment `dev-stand fixture`) and `qa vpn test user` (`autologin`); every `serial` is a string of digits; with the username only alice's; autologin only the second. No profile file or key in the answer. |
+| `list_access_lists` | "Which IP access lists are set?" / "What can alice reach?" | two entries: group `staff` route `10.20.0.0/24`, user `alice` nat `10.30.0.5/32`, and the `note` about global IP/subnet rules; "what can alice reach" now also calls this tool and names both subnets and the Admin UI for the global rules. |
 
 ## Connecting a VPN client to the stand
 

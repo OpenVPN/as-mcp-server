@@ -1,0 +1,539 @@
+[
+  {
+    "name": "connection_info",
+    "description": "Troubleshooting: which Access Server this MCP talks to, where the URL, user and password come from, TLS mode, session state and the server version. Never fails; problems are reported in the 'error' field.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_active_vpn_connections",
+    "description": "Currently connected VPN clients (username, common name, real and virtual addresses, connected since, bytes in/out, cipher) and the OpenVPN daemons serving them. Always the full list; the API does not paginate this endpoint. A username or common name that is not a plain name is replaced by {\"withheld\": true, \"length\", \"flags\", \"fingerprint\"}, because the connecting client chose it; say it was withheld and never guess what it said.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_default_user",
+    "description": "The __DEFAULT__ meta user: the property values every user and group inherits unless overridden (deny, deny_web, autologin, reroute_gw, def_deny, ...).",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_license_info",
+    "description": "Licensing status: licensing_type (subscription, fixed, aws, unlicensed), current and maximum concurrent connections, and subscription details such as state, cc_limit and next_update when a subscription is active.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_log_reports",
+    "description": "Connection and authentication log records: who connected or failed to connect, when, from where, with which client, and any error text. since/until are relative durations like '30m', '24h', '7d', '15d 20m' (units s m h d w M y) counted back from now; errors_only keeps records with an error; search is a substring match over username, node, service, error, platform, version, gui_version. Returns 'records' and 'total'. Anyone can make a login attempt without credentials, so username, platform, version, gui_version and proxied_ip are client-chosen text: a value that is not a plain name, version or address is replaced by {\"withheld\": true, \"length\", \"flags\", \"fingerprint\"} (the same fingerprint means the same text) and 'withheld_values' counts them (absent when none were withheld); say how many were withheld and never guess what they said. A record whose error is 'challenge' or 'Challenge' is the first step of an MFA or RADIUS sign-in, not a failed login. A record whose error starts with LOCKOUT marks the moment an account was locked after repeated failures (default 15 minutes); it does not show whether the lockout is still active, and its absence does not prove there was none.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_size": {
+          "default": 50,
+          "description": "Records per page (1-1000).",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Records to skip; page N starts at N*page_size.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring of the username that created the record (the API's username filter, operation substring)."
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start of the time window as a relative duration counted back from now, like '30m', '24h', '7d' or '15d 20m' (units s m h d w M y). Sent as filters.timestamp.start_relative; omit for an open start."
+        },
+        "until": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End of the time window as a relative duration counted back from now, same format as since (for example '1m'). Sent as filters.timestamp.end_relative; omit for an open end."
+        },
+        "errors_only": {
+          "default": false,
+          "description": "true keeps only records whose error field is not empty, i.e. the error message of an authentication failure; false returns all records.",
+          "type": "boolean"
+        },
+        "active_only": {
+          "default": false,
+          "description": "true keeps only records of sessions that are still active (the API's boolean active filter).",
+          "type": "boolean"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring searched at once in username, node, service, error, platform, version and gui_version (the API's anywhere filter, the only fields the server accepts there); combinable with the other filters."
+        },
+        "order_by": {
+          "default": "timestamp",
+          "description": "Record field to sort by (the API's order_by): timestamp is the record time, duration is in seconds, bytes_sent and bytes_received are byte counts.",
+          "enum": [
+            "timestamp",
+            "node",
+            "username",
+            "service",
+            "duration",
+            "active",
+            "virtual_ipv4_address",
+            "bytes_received",
+            "bytes_sent",
+            "error",
+            "version",
+            "gui_version",
+            "platform",
+            "protocol"
+          ],
+          "type": "string"
+        },
+        "sort": {
+          "default": "desc",
+          "description": "Sort direction: asc (ascending) or desc (descending); the API's sort_by.",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_server_info",
+    "description": "Access Server version, build, web UI version, bundled client version, OS distribution, CPU architecture, core count and hostname.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_server_status",
+    "description": "Status of the Access Server's internal services (web, auth, api, daemons, ...) and authentication modules, plus the last restart time. Use it first when users report they cannot connect.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_status_overview",
+    "description": "Consolidated health check in one call: server version and build, EULA status, DCO kernel module availability, and the current value of any configuration keys named in config_names (for example 'host.name', 'vpn.server.daemon.enable').",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config_names": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Keys of configuration items to read from the active configuration, for example 'host.name' or 'vpn.server.daemon.enable'; each comes back in configuration_items with value, default_value and derived_from. Omit for none."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_access_rules",
+    "description": "The rules inside one or more rulesets: type (domain_routing or filter), match_type, match_data (domain, subnet, ...), action (route, nat, deny, bypass), position and comment. Filters: rule_type, match_data_contains (substring).",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ruleset_ids": {
+          "description": "IDs of the rulesets whose rules to list, at least one; take them from list_access_rulesets.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "rule_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "domain_routing",
+                "filter"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Keep only rules of this type: domain_routing or filter (the API's type filter, operation equal)."
+        },
+        "match_data_contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring of the rule's match_data, for domain_routing rules part of a domain name (the API's match_data filter, operation substring)."
+        }
+      },
+      "required": [
+        "ruleset_ids"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_access_rulesets",
+    "description": "Access-control rulesets assigned to an owner: a username, a group name, or '__DEFAULT__' for the global rulesets; omit owner to list every ruleset. Returns ids, names, positions and owners only; the actual rules come from list_access_rules(ruleset_ids=...). To answer 'what can user X reach', query the user, each of the user's groups (see list_users -> group) and '__DEFAULT__'.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Assignee whose rulesets to list: a username, a group name, or '__DEFAULT__' for the global rulesets. Omit to list every ruleset."
+        },
+        "name_contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring of the ruleset name (the API's name filter, operation substring)."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_groups",
+    "description": "Groups defined on the Access Server with their properties and member_count; include_members=true adds the 'members' list. Filters: name_contains (substring), group_names (exact list). Returns 'profiles' and 'total'.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_size": {
+          "default": 50,
+          "description": "Records per page (1-1000).",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Records to skip; page N starts at N*page_size.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name_contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring of the group name (the API's name filter, operation substring)."
+        },
+        "include_members": {
+          "default": false,
+          "description": "true adds the members list to each group; false returns only member_count (the API's enumerate_members).",
+          "type": "boolean"
+        },
+        "group_names": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact group names to fetch (the API's groups list). Names that do not exist are silently absent from the response; keep the list short, the backend query has a size limit."
+        },
+        "order_by": {
+          "default": "name",
+          "description": "Group attribute to sort by: name, admin, autologin, auth_method, mfa_enabled or member_count (the API's order_by).",
+          "enum": [
+            "name",
+            "admin",
+            "autologin",
+            "auth_method",
+            "mfa_enabled",
+            "member_count"
+          ],
+          "type": "string"
+        },
+        "sort": {
+          "default": "asc",
+          "description": "Sort direction: asc (ascending) or desc (descending); the API's sort_by.",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_users",
+    "description": "Users defined on the Access Server (the special __DEFAULT__ user is excluded; use get_default_user for it). Each profile carries admin, autologin, deny, auth_method, group, mfa_status and other properties with inheritance metadata. Filters: name_contains (substring), group (exact group name), admins_only, autologin_only, usernames (exact list; unknown names are silently absent). Returns 'profiles' and 'total'. MFA secrets are redacted. Profiles carry no lockout state: deny, deny_web, totp_locked and mfa_status are permanent settings, and whether a user is locked out right now cannot be read through this server.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_size": {
+          "default": 50,
+          "description": "Records per page (1-1000).",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Records to skip; page N starts at N*page_size.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name_contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Substring of the user name (the API's name filter, operation substring)."
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact group name; only users whose group property equals it (the API's group filter, operation equal)."
+        },
+        "admins_only": {
+          "default": false,
+          "description": "true returns only administrators (the API's boolean admin filter).",
+          "type": "boolean"
+        },
+        "autologin_only": {
+          "default": false,
+          "description": "true returns only users with autologin enabled (the API's boolean autologin filter).",
+          "type": "boolean"
+        },
+        "usernames": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact, case-sensitive usernames to fetch (the API's users list). Names that do not exist are silently absent from the response; keep the list short, the backend query has a size limit."
+        },
+        "order_by": {
+          "default": "name",
+          "description": "User attribute to sort by: name, admin, autologin, group or mfa_status (the API's order_by).",
+          "enum": [
+            "name",
+            "admin",
+            "autologin",
+            "group",
+            "mfa_status"
+          ],
+          "type": "string"
+        },
+        "sort": {
+          "default": "asc",
+          "description": "Sort direction: asc (ascending) or desc (descending); the API's sort_by.",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "login",
+    "description": "Answer the server's second sign-in step. Only needed when another tool reported that Access Server asks for one: for its own authenticator prompt that is the current 6-digit MFA code; for a RADIUS, LDAP or PAM back end it is whatever the quoted prompt asks for (a PIN, a passcode). The session is then renewed in the background up to Access Server's renewal limit (4 hours by default); after that, or after the machine slept past the token's expiry, another tool asks again. Never pass a password.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "totp_code": {
+          "description": "The user's answer to the server's prompt, sent as the response to the pending challenge. For the authenticator prompt: the current 6-digit code, valid for 30 seconds, usable once; spaces are ignored and anything else is refused before it is sent. For any other prompt: the text the prompt asks for, sent as typed after trimming.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "totp_code"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  }
+]

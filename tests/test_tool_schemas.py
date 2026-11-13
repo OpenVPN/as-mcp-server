@@ -26,6 +26,10 @@ EXPECTED_HINTS = {
     ("list_access_rules", "ruleset_ids"): ["list_access_rulesets"],
     ("get_status_overview", "config_names"): ["host.name", "derived_from"],
     ("login", "totp_code"): ["6-digit", "30 seconds"],
+    ("list_connection_profiles", "username"): ["Exact", "equal"],
+    ("list_connection_profiles", "autologin_only"): ["without a password"],
+    ("list_access_lists", "usernames"): ["absent"],
+    ("list_access_lists", "group_names"): ["absent"],
 }
 
 

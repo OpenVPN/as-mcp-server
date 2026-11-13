@@ -35,8 +35,10 @@ EXPECTED_TOOLS = {
     "get_default_user",
     "list_access_rulesets",
     "list_access_rules",
+    "list_connection_profiles",
+    "list_access_lists",
 }
-assert len(EXPECTED_TOOLS) == 13
+assert len(EXPECTED_TOOLS) == 15
 
 
 def server_for(tmp_path: Path, routes: dict, **settings) -> tuple[FastMCP, Router]:
@@ -57,7 +59,9 @@ def server_for(tmp_path: Path, routes: dict, **settings) -> tuple[FastMCP, Route
     return build(Settings(**defaults), transport=router.transport()), router
 
 
-async def test_the_server_lists_exactly_the_thirteen_tools(tmp_path: Path) -> None:
+async def test_the_server_lists_exactly_the_fifteen_read_mode_tools(
+    tmp_path: Path,
+) -> None:
     mcp, _ = server_for(tmp_path, {})
     async with Client(mcp) as client:
         names = {tool.name for tool in await client.list_tools()}
@@ -353,6 +357,22 @@ def test_instructions_send_every_how_to_to_the_3x_docs_not_to_remembered_steps()
     for phrase in ("sacli", "file paths", "asks how", "offer a change", "2.x"):
         assert phrase in " ".join(rule), phrase
     assert "https://openvpn.net/as-docs/v3/" in INSTRUCTIONS
+
+
+def test_instructions_send_what_can_x_reach_through_rulesets_and_access_lists() -> None:
+    start = INSTRUCTIONS.index('To answer "what can user X reach":')
+    end = INSTRUCTIONS.index("When asked whether user X is locked out")
+    assert INSTRUCTIONS[start:end] == (
+        'To answer "what can user X reach": list_access_rulesets(owner=X) for\n'
+        "the user, then for each group the user belongs to, then "
+        'owner="__DEFAULT__"; collect the ruleset\n'
+        "ids and call list_access_rules(ruleset_ids=[...]); then "
+        "list_access_lists(usernames=[X],\n"
+        "group_names=[the user's group]) for the IPv4 subnet rules, and report "
+        "both. Global IP/subnet rules\n"
+        "are not visible through the API; say so and point to the Admin UI for "
+        "them.\n"
+    )
 
 
 async def test_an_unexpected_exception_does_not_reach_the_agent_verbatim(

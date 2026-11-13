@@ -1,0 +1,41 @@
+{
+  "status": 200,
+  "note": "3.2.4: all profiles, ordered by serial (captured 2026-11-13)",
+  "body": {
+    "total": 2,
+    "profiles": [
+      {
+        "serial": "1917045504553045148",
+        "common_name": "alice",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "alice"
+      },
+      {
+        "serial": "2877949965557316950",
+        "common_name": "qa vpn test user_AUTOLOGIN",
+        "algorithm": "secp384r1",
+        "not_before": "2026-10-01T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": null,
+        "profile_type": "autologin",
+        "tls_crypt_v2": false,
+        "last_used": "2026-10-02T00:00:00",
+        "username": "qa vpn test user"
+      }
+    ]
+  }
+}
