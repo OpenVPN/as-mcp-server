@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from as_mcp_server.guards import Effect, auto_limit_reason, lockout_reason
+import pytest
+
+from as_mcp_server.effective import GUARDED, UNKNOWN
+from as_mcp_server.guards import (
+    Effect,
+    auto_limit_reason,
+    lockout_reason,
+    newly_denied,
+)
 
 SAFE = {
     "deny": False,
@@ -134,3 +142,78 @@ def test_auto_reports_the_first_refused_item() -> None:
         Effect("user", "eve", PLAIN, {**PLAIN, "admin": True}),
     ]
     assert auto_limit_reason(effects) == "user eve would become an administrator"
+
+
+@pytest.mark.parametrize("field", ["deny", "deny_web", "admin", "auth_method"])
+def test_an_unknown_value_that_decides_the_own_sign_in_is_a_lockout(
+    field: str,
+) -> None:
+    reason = lockout_reason("openvpn", None, own(**{field: UNKNOWN}))
+    assert reason == f"the {field} of the own account after this change is not known"
+
+
+def test_the_own_account_in_another_letter_case_is_also_protected_from_unknown() -> (
+    None
+):
+    effect = Effect("user", "OpenVPN", SAFE, {**SAFE, "auth_method": UNKNOWN})
+    assert lockout_reason("openvpn", None, [effect])
+
+
+@pytest.mark.parametrize("field", ["totp", "autologin"])
+def test_an_unknown_value_that_cannot_lock_the_own_account_out_passes(
+    field: str,
+) -> None:
+    assert lockout_reason("openvpn", None, own(**{field: UNKNOWN})) is None
+
+
+def test_an_unknown_value_of_another_user_is_not_a_lockout() -> None:
+    for field in GUARDED:
+        effect = Effect("user", "bob", PLAIN, {**PLAIN, field: UNKNOWN})
+        assert lockout_reason("openvpn", None, [effect]) is None, field
+
+
+@pytest.mark.parametrize("field", GUARDED)
+def test_an_unknown_value_is_refused_in_auto_mode_for_any_target(field: str) -> None:
+    for kind in ("user", "group"):
+        effect = Effect(kind, "bob", PLAIN, {**PLAIN, field: UNKNOWN})
+        assert auto_limit_reason([effect]) == (
+            f"the {field} of {kind} bob after this change is not known"
+        )
+
+
+def test_an_unknown_value_of_a_new_user_is_refused_in_auto_mode() -> None:
+    effect = Effect("user", "new", None, {**PLAIN, "totp": UNKNOWN})
+    assert auto_limit_reason([effect]) == (
+        "the totp of user new after this change is not known"
+    )
+
+
+def test_newly_denied_lists_users_whose_deny_goes_from_false_to_true() -> None:
+    effects = [
+        Effect("user", "bob", PLAIN, {**PLAIN, "deny": True}),
+        Effect("user", "eve", {**PLAIN, "deny": True}, {**PLAIN, "deny": True}),
+    ]
+    assert newly_denied(effects) == ["bob"]
+
+
+def test_newly_denied_counts_an_unknown_deny_as_possibly_blocked() -> None:
+    effects = [Effect("user", "bob", PLAIN, {**PLAIN, "deny": UNKNOWN})]
+    assert newly_denied(effects) == ["bob"]
+
+
+def test_newly_denied_leaves_out_everything_that_has_no_session_to_keep() -> None:
+    denied = {**PLAIN, "deny": True}
+    effects = [
+        Effect("user", "created", None, denied),
+        Effect("user", "deleted", PLAIN, None),
+        Effect("user", "unblocked", denied, PLAIN),
+        Effect("user", "untouched", PLAIN, {**PLAIN, "totp": True}),
+        Effect("group", "staff", PLAIN, denied),
+    ]
+    assert newly_denied(effects) == []
+
+
+def test_newly_denied_keeps_the_order_of_the_effects() -> None:
+    denied = {**PLAIN, "deny": True}
+    effects = [Effect("user", name, PLAIN, denied) for name in ("zoe", "adam", "mia")]
+    assert newly_denied(effects) == ["zoe", "adam", "mia"]

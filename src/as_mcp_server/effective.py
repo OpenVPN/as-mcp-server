@@ -8,14 +8,16 @@ Measured 2026-11-12 on 3.1.0 and 3.2.3: a value inherited from a group has sourc
 type `group`; `configuration`, `default` and `implicit_default` are server-wide.
 `/users/defaultuser` does not report the configuration: with `auth.module.type=pam`
 every inheriting record says `pam` and the default record still says `local`. The
-server-wide value is therefore read off records that inherit it (`server_wide`),
-and when none does, the result cannot be computed.
+server-wide value is therefore read off records that inherit it (`server_wide`).
+When none does, or when they disagree, the value after a reset is `UNKNOWN`: the
+write may still go ahead where the design allows it, and the guards decide where it
+may not.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from typing import Any, Final
 
 GUARDED = ("deny", "deny_web", "admin", "auth_method", "totp", "autologin")
 INHERITABLE = (
@@ -34,7 +36,31 @@ DEFAULT_RECORD = "__DEFAULT__"
 
 
 class CannotCompute(Exception):
-    """The state after the change cannot be known from what was read."""
+    """The read itself is broken: a record without a guarded field, or a user in a
+    group whose state was not given."""
+
+
+class _Unknown:
+    """The value of a field that will be inherited from a server-wide setting nobody
+    could read. Equal to nothing, and asking it for a truth value is an error, so no
+    check can pass or fail on it by accident."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "unknown"
+
+    def __bool__(self) -> bool:
+        raise TypeError("an unknown value has no truth; test `is UNKNOWN` first")
+
+    def __copy__(self) -> _Unknown:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _Unknown:
+        return self
+
+
+UNKNOWN: Final = _Unknown()
 
 
 def snapshot(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -44,19 +70,35 @@ def snapshot(record: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def server_wide(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    """The GUARDED values a record with no own value and no group inherits.
+def server_wide(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    fields: Sequence[str] = GUARDED,
+    complete: bool = True,
+) -> dict[str, Any]:
+    """The values of `fields` a record with no own value and no group inherits.
 
-    Only fields that some record inherits from the server are present.
+    A field is present only when some record inherits it from the server and all
+    records that do agree. `complete=False` says that not every record was read:
+    then nothing is known.
     """
+    if not complete:
+        return {}
     base: dict[str, Any] = {}
+    disputed: set[str] = set()
     for record in records:
         if record.get("name") == DEFAULT_RECORD:
             continue
-        for field in GUARDED:
+        for field in fields:
             prop = record.get(field)
-            if field not in base and _from_server(prop):
-                base[field] = prop["value"]
+            if field in disputed or not _from_server(prop):
+                continue
+            value = prop["value"]
+            if field not in base:
+                base[field] = value
+            elif type(base[field]) is not type(value) or base[field] != value:
+                del base[field]
+                disputed.add(field)
     return base
 
 
@@ -71,6 +113,7 @@ def user_after(
 
     `group` is the state (a snapshot or `group_after`) of the group the user is in
     after the change; `base` is `server_wide(...)`. A change set to None is no change.
+    A field that would come from `base` and is not there is `UNKNOWN`.
     """
     group_name = changes.get("group") or (_group_of(user) if user else None)
     if group_name is not None and group is None:
@@ -113,10 +156,8 @@ def _after(
             result[field] = group[field]
         elif _from_server(prop):
             result[field] = prop["value"]
-        elif field in base:
-            result[field] = base[field]
         else:
-            raise CannotCompute(f"the server-wide value of {field} is not known")
+            result[field] = base.get(field, UNKNOWN)
     return result
 
 

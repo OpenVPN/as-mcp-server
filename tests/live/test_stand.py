@@ -15,6 +15,15 @@ from fastmcp.exceptions import ToolError
 
 from as_mcp_server import cli
 from as_mcp_server.client import REDACTED, ClientHolder, redact
+from as_mcp_server.effective import (
+    GUARDED,
+    INHERITABLE,
+    UNKNOWN,
+    group_after,
+    server_wide,
+    snapshot,
+    user_after,
+)
 from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.server import build
 from as_mcp_server.texts import NOTE_ACCESS_LISTS
@@ -434,3 +443,29 @@ async def test_a_user_who_is_not_an_administrator_is_told_so(
     ) as refused:
         await call(mcp, "list_access_lists")
     assert bob["OPENVPN_AS_PASSWORD"] not in str(refused.value)
+
+
+async def test_the_resolver_reproduces_every_user_of_the_stand(stand) -> None:
+    """effective.py is pure; this pins it to what real servers return. With no
+    change, the predicted state of every user equals the state read, and every
+    server-wide value can be read off the records (none unknown, none disputed)."""
+    _name, settings = stand
+    client = ClientHolder(settings).get()
+    try:
+        page = {"page_size": 1000, "offset": 0}
+        users = (await client.post("/users/list", page))["profiles"]
+        groups = (await client.post("/groups/list", page))["profiles"]
+    finally:
+        await client.aclose()
+    base = server_wide(users + groups, fields=INHERITABLE)
+    assert set(base) == set(INHERITABLE)
+    by_name = {group["name"]: group for group in groups}
+    assert len(users) >= 6
+    for user in users:
+        group = by_name.get(user.get("group") or "")
+        group_state = group_after(group, {}, [], base) if group else None
+        assert user_after(user, {}, [], group_state, base) == snapshot(user), user[
+            "name"
+        ]
+        reset = user_after(user, {}, list(GUARDED), group_state, base)
+        assert UNKNOWN not in reset.values(), user["name"]

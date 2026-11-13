@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import pytest
 
 from as_mcp_server.effective import (
     GUARDED,
+    INHERITABLE,
+    UNKNOWN,
     CannotCompute,
     group_after,
     server_wide,
@@ -81,7 +84,7 @@ def test_the_stand_fixtures_can_be_snapshotted() -> None:
 def test_server_wide_values_come_from_records_that_inherit_from_the_server() -> None:
     records = [
         record(auth_method=prop("pam"), totp=own(True), admin=from_group(True)),
-        record(totp=prop(False, source="implicit_default")),
+        record(auth_method=prop("pam"), totp=prop(False, source="implicit_default")),
     ]
     base = server_wide(records)
     assert base["auth_method"] == "pam"
@@ -134,12 +137,19 @@ def test_reset_without_a_group_takes_the_server_wide_value() -> None:
     assert after["auth_method"] == "pam"
 
 
-def test_reset_without_a_group_and_without_a_server_wide_value_cannot_be_computed() -> (
-    None
-):
-    user = record(auth_method=own("local"))
-    with pytest.raises(CannotCompute):
-        user_after(user, {}, ["auth_method"], None, {})
+def test_a_reset_without_a_known_server_wide_value_is_unknown_not_an_error() -> None:
+    user = record(totp=own(True))
+    after = user_after(user, {}, ["totp"], None, {})
+    assert after["totp"] is UNKNOWN
+    assert {field: after[field] for field in GUARDED if field != "totp"} == {
+        field: VALUES[field] for field in GUARDED if field != "totp"
+    }
+
+
+def test_a_new_user_without_a_known_server_wide_value_is_unknown_there() -> None:
+    after = user_after(None, {"deny": True}, [], None, {"admin": False})
+    assert after["deny"] is True and after["admin"] is False
+    assert after["totp"] is UNKNOWN and after["auth_method"] is UNKNOWN
 
 
 def test_a_value_inherited_from_the_server_stays_without_a_base() -> None:
@@ -176,8 +186,7 @@ def test_a_group_keeps_own_values_and_takes_changes() -> None:
 def test_a_group_reset_takes_the_server_wide_value() -> None:
     group = record(name="staff", totp=own(True))
     assert group_after(group, {}, ["totp"], {"totp": False})["totp"] is False
-    with pytest.raises(CannotCompute):
-        group_after(group, {}, ["totp"], {})
+    assert group_after(group, {}, ["totp"], {})["totp"] is UNKNOWN
 
 
 def test_a_new_group_takes_changes_then_the_server() -> None:
@@ -185,3 +194,75 @@ def test_a_new_group_takes_changes_then_the_server() -> None:
         **state(admin=True),
         "group": None,
     }
+
+
+def test_a_member_follows_its_group_into_the_unknown() -> None:
+    """The group was reset and nobody knows the server-wide value: neither does the
+    member that inherits from the group."""
+    group = group_after(record(name="staff", totp=own(True)), {}, ["totp"], {})
+    member = record(group="staff", totp=from_group(True))
+    assert user_after(member, {}, [], group, {})["totp"] is UNKNOWN
+
+
+def test_an_own_value_is_known_even_when_the_group_value_is_not() -> None:
+    group = group_after(record(name="staff", totp=own(True)), {}, ["totp"], {})
+    member = record(group="staff", totp=own(False))
+    assert user_after(member, {}, [], group, {})["totp"] is False
+
+
+def test_a_group_state_without_a_field_is_still_a_broken_read() -> None:
+    user = record(group="staff", totp=from_group(True))
+    with pytest.raises(CannotCompute):
+        user_after(user, {}, [], {"deny": False}, BASE)
+
+
+def test_an_explicitly_set_field_is_not_taken_as_the_server_wide_value() -> None:
+    """The shape of tests/fixtures/users_list.json: admin set on the record, the
+    source type still filled."""
+    set_on_record = record(
+        admin={
+            "value": True,
+            "inherited": False,
+            "inherited_source_type": "implicit_default",
+        }
+    )
+    assert "admin" not in server_wide([set_on_record])
+
+
+def test_records_that_disagree_give_no_server_wide_value() -> None:
+    yes, no = record(totp=prop(True)), record(totp=prop(False))
+    for records in ([yes, no], [no, yes], [yes, yes, no], [no, yes, yes]):
+        base = server_wide(records)
+        assert "totp" not in base
+        assert base["auth_method"] == "local"  # the fields they agree on stay
+
+
+def test_one_and_true_are_a_disagreement_not_the_same_value() -> None:
+    assert "totp" not in server_wide([record(totp=prop(True)), record(totp=prop(1))])
+
+
+def test_records_that_agree_give_the_value_once() -> None:
+    assert server_wide([record(totp=prop(True)), record(totp=prop(True))])["totp"]
+
+
+def test_an_incomplete_read_gives_no_server_wide_values() -> None:
+    assert server_wide([record(totp=prop(True))], complete=False) == {}
+
+
+def test_a_field_outside_the_guarded_set_is_read_on_request() -> None:
+    with_gateway = record(reroute_gw=prop(True))
+    assert "reroute_gw" not in server_wide([with_gateway])
+    base = server_wide([with_gateway, record()], fields=INHERITABLE)
+    assert base["reroute_gw"] is True
+    assert set(base) == {*GUARDED, "reroute_gw"}
+
+
+def test_unknown_is_one_object_that_equals_nothing_and_has_no_truth() -> None:
+    assert repr(UNKNOWN) == "unknown" and str(UNKNOWN) == "unknown"
+    assert UNKNOWN != "unknown" and UNKNOWN is not None
+    assert UNKNOWN != True and UNKNOWN != False  # noqa: E712
+    assert (
+        copy.copy(UNKNOWN) is UNKNOWN and copy.deepcopy({"a": UNKNOWN})["a"] is UNKNOWN
+    )
+    with pytest.raises(TypeError, match="is UNKNOWN"):
+        bool(UNKNOWN)
