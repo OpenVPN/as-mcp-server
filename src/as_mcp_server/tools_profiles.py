@@ -16,7 +16,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from as_mcp_server.client import AccessServerClient
+from as_mcp_server.client import AccessServerClient, NotFoundError
 from as_mcp_server.outputs import (
     DELIVERY_REMINDER,
     OutputError,
@@ -421,9 +421,7 @@ class _DeleteProfiles:
             # Never the `filter` field: it deletes by substring.
             try:
                 await client.post("/profiles/delete-user", {"users": [item.username]})
-            except ToolError as exc:
-                if "(404)" not in str(exc):
-                    raise
+            except NotFoundError as exc:
                 # Measured: 404 when the user has no profiles (left).
                 raise ToolError(
                     "Access Server found no connection profiles of user "
@@ -623,7 +621,10 @@ def register_profile_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "Delete connection profiles for good: the listed serials, or every "
             "profile of one user. Give exactly one of serials or username. A "
             "deleted profile can no longer be used to connect and cannot be "
-            "restored; the user needs a new one. The administrator sees the owner, "
+            "restored; the user needs a new one. A session that is already "
+            "connected with a deleted profile stays connected until it ends or is "
+            "disconnected with disconnect_vpn_sessions. The administrator sees the "
+            "owner, "
             "type and comment of every profile before approving. Find serials "
             "with list_connection_profiles. The item of 'items' has outcome and "
             "'deleted', the serials that were deleted."

@@ -204,6 +204,11 @@ class RequestTimeoutError(ToolError):
     """The server did not answer in time, so the outcome of the call is unknown."""
 
 
+class NotFoundError(ToolError):
+    """The server answered 404: the endpoint, or what the request named, is not
+    there."""
+
+
 class MfaEnrollmentRequiredError(ToolError):
     """The account has MFA enabled but never enrolled.
 
@@ -845,7 +850,7 @@ class AccessServerClient:
                 MSG_FORBIDDEN.format(method=method, path=path, reason=reason)
             )
         if status == 404:
-            raise ToolError(MSG_NOT_FOUND.format(method=method, path=path))
+            raise NotFoundError(MSG_NOT_FOUND.format(method=method, path=path))
         if status == 400:
             raise ToolError(
                 MSG_BAD_REQUEST.format(

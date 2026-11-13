@@ -403,7 +403,8 @@ async def test_users_that_differ_only_in_letter_case_are_one_duplicate(
 
 
 @pytest.mark.parametrize(
-    "comment", ["line one\nremote evil.example 1194", "tab\there", "x" * 201, "‮"]
+    "comment",
+    ["line one\nremote evil.example 1194", "tab\there", "x" * 201, chr(0x202E)],
 )
 async def test_a_comment_with_line_breaks_or_over_200_characters_is_refused(
     tmp_path: Path, comment: str
