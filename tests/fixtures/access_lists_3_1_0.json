@@ -18,6 +18,88 @@
         "type": "access_to_ipv4"
       },
       {
+        "username": "alice",
+        "access_route": {
+          "type": "route",
+          "accept": true,
+          "subnet": {
+            "ipv6": false,
+            "netip": "10.40.0.0",
+            "prefix_length": 24,
+            "service": [
+              {
+                "protocol": "tcp",
+                "start_port": 443
+              },
+              {
+                "protocol": "udp",
+                "start_port": 2000,
+                "end_port": 2999
+              },
+              {
+                "protocol": "icmp",
+                "type": "icmp-echo-request"
+              }
+            ]
+          }
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "username": "alice",
+        "access_route": {
+          "type": "route",
+          "accept": false,
+          "subnet": {
+            "ipv6": false,
+            "netip": "10.40.0.99",
+            "prefix_length": 32,
+            "service": []
+          }
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "username": "bob",
+        "access_route": {
+          "type": "user",
+          "accept": true,
+          "username": "alice"
+        },
+        "type": "access_from_ipv4"
+      },
+      {
+        "username": "bob",
+        "access_route": {
+          "type": "group",
+          "accept": true,
+          "groupname": "staff"
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "username": "\u0436\u0430\u043d\u043d\u0430",
+        "access_route": {
+          "type": "route",
+          "accept": true,
+          "subnet": {
+            "ipv6": false,
+            "netip": "10.50.0.0",
+            "prefix_length": 16,
+            "service": []
+          }
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "groupname": "contractors",
+        "access_route": {
+          "type": "all_vpn_clients",
+          "accept": true
+        },
+        "type": "access_to_ipv4"
+      },
+      {
         "groupname": "staff",
         "access_route": {
           "type": "route",

@@ -17,6 +17,7 @@ from as_mcp_server import cli
 from as_mcp_server.client import REDACTED, ClientHolder, redact
 from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.server import build
+from as_mcp_server.texts import NOTE_ACCESS_LISTS
 from tests.live.conftest import (
     LOCAL,
     read_env_file,
@@ -286,3 +287,138 @@ async def test_crafted_usernames_from_failed_logins_never_reach_the_agent(
     assert raw["total"] >= len(crafted)
     assert raw.get("withheld_values", 0) >= len(crafted)
     assert marker not in repr(raw)
+
+
+def owners(result: dict) -> list[str]:
+    return sorted(e.get("username") or e["groupname"] for e in result["profiles"])
+
+
+async def test_connection_profiles_page_sort_and_filter_on_both_servers(stand) -> None:
+    """The stand holds 7 profiles: alice 1, bob 4, жанна 1, `qa vpn test user` 1."""
+    _name, settings = stand
+    mcp = build(settings)
+    everything = await call(mcp, "list_connection_profiles")
+    serials = [p["serial"] for p in everything["profiles"]]
+    assert everything["total"] == len(serials) == 7
+    assert all(isinstance(s, str) and s.isdigit() for s in serials)
+    assert [int(s) for s in serials] == sorted(int(s) for s in serials)
+    assert "-----BEGIN" not in repr(everything)
+
+    paged: list[str] = []
+    for offset, expected in ((0, 3), (3, 3), (6, 1), (9, 0)):
+        page = await call(
+            mcp, "list_connection_profiles", {"page_size": 3, "offset": offset}
+        )
+        assert page["total"] == 7 and len(page["profiles"]) == expected, offset
+        paged += [p["serial"] for p in page["profiles"]]
+    assert paged == serials
+    descending = await call(mcp, "list_connection_profiles", {"sort": "desc"})
+    assert [p["serial"] for p in descending["profiles"]] == serials[::-1]
+
+    async def of(**arguments) -> list[tuple[str, str]]:
+        result = await call(mcp, "list_connection_profiles", arguments)
+        assert result["total"] == len(result["profiles"])
+        return sorted((p["username"], p["profile_type"]) for p in result["profiles"])
+
+    assert await of(username="bob") == [("bob", "userlogin")] * 4
+    assert await of(username="жанна") == [("жанна", "userlogin")]
+    assert await of(username="qa vpn test user") == [("qa vpn test user", "autologin")]
+    assert await of(autologin_only=True) == [("qa vpn test user", "autologin")]
+    assert await of(username="bob", autologin_only=True) == []
+    # exact and case-sensitive: neither a prefix nor another letter case matches
+    assert await of(username="ali") == []
+    assert await of(username="Alice") == []
+    assert await of(username="nobody-here") == []
+
+
+async def test_access_lists_narrow_to_the_named_owners_on_both_servers(stand) -> None:
+    _name, settings = stand
+    mcp = build(settings)
+    everything = await call(mcp, "list_access_lists")
+    assert owners(everything) == sorted(
+        ["alice"] * 3 + ["bob"] * 2 + ["жанна", "contractors", "staff"]
+    )
+    assert everything["note"] == NOTE_ACCESS_LISTS
+
+    async def of(**arguments) -> list[str]:
+        result = await call(mcp, "list_access_lists", arguments)
+        assert result["note"] == NOTE_ACCESS_LISTS
+        return owners(result)
+
+    # Without the tool's object_type filter the server adds every group entry here.
+    assert await of(usernames=["alice"]) == ["alice"] * 3
+    assert await of(usernames=["жанна"]) == ["жанна"]
+    assert await of(usernames=["bob", "alice"]) == ["alice"] * 3 + ["bob"] * 2
+    assert await of(group_names=["contractors"]) == ["contractors"]
+    assert await of(group_names=["staff", "contractors"]) == ["contractors", "staff"]
+    assert await of(usernames=["bob"], group_names=["staff"]) == ["bob", "bob", "staff"]
+    assert await of(usernames=["nobody-here"]) == []
+    assert await of(usernames=["Alice"]) == []
+    # a group name is not a user, and the other way round
+    assert await of(usernames=["staff"]) == []
+    assert await of(group_names=["alice"]) == []
+
+    alice = (await call(mcp, "list_access_lists", {"usernames": ["alice"]}))["profiles"]
+    routes = {e["access_route"]["subnet"]["netip"]: e["access_route"] for e in alice}
+    assert routes["10.30.0.5"]["type"] == "nat" and routes["10.30.0.5"]["accept"]
+    assert routes["10.40.0.99"]["accept"] is False
+    assert routes["10.40.0.0"]["subnet"]["service"] == [
+        {"protocol": "tcp", "start_port": 443},
+        {"protocol": "udp", "start_port": 2000, "end_port": 2999},
+        {"protocol": "icmp", "type": "icmp-echo-request"},
+    ]
+    bob = (await call(mcp, "list_access_lists", {"usernames": ["bob"]}))["profiles"]
+    assert {(e["type"], e["access_route"]["type"]) for e in bob} == {
+        ("access_from_ipv4", "user"),
+        ("access_to_ipv4", "group"),
+    }
+
+
+async def test_an_ipv6_access_list_is_on_the_server_but_not_in_the_api(stand) -> None:
+    """Why list_access_lists says so in its note. When this fails, a newer Access
+    Server started to return IPv6 lists: drop the sentence for that version."""
+    if shutil.which("docker") is None:
+        pytest.skip("docker is needed to read the stand's user properties")
+    name, settings = stand
+    props = subprocess.run(
+        ["docker", "exec", name, "sacli", "--user", "contractors", "UserPropGet"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout
+    assert '"access_to_ipv6.0": "+ROUTE:fd00:20::/64"' in props
+    everything = await call(build(settings), "list_access_lists")
+    assert "fd00" not in repr(everything)
+    assert {e["type"] for e in everything["profiles"]} == {
+        "access_to_ipv4",
+        "access_from_ipv4",
+    }
+
+
+async def test_a_user_who_is_not_an_administrator_is_told_so(
+    stand, tmp_path: Path
+) -> None:
+    """bob has a password and no admin rights: nothing is listed for him.
+
+    One call only. Access Server counts every such sign-in as a failed login and
+    locks the account for 15 minutes after five, so a stand that ran this test
+    several times in a row answers with the lockout text instead.
+    """
+    non_admin = LOCAL / "non-admin.env"
+    if not non_admin.exists():
+        pytest.skip("dev/.local/non-admin.env is created by dev/seed_fixtures.py")
+    name, _ = stand
+    bob = read_env_file(non_admin)
+    mcp = build(
+        settings_for(
+            f"{name}.env",
+            tmp_path,
+            user=bob["OPENVPN_AS_USER"],
+            password=bob["OPENVPN_AS_PASSWORD"],
+        )
+    )
+    with pytest.raises(
+        ToolError, match=r"not an administrator|temporarily locked out"
+    ) as refused:
+        await call(mcp, "list_access_lists")
+    assert bob["OPENVPN_AS_PASSWORD"] not in str(refused.value)

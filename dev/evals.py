@@ -105,8 +105,18 @@ CASES = (
         "reach",
         "What can user alice reach over the VPN?",
         calls_all=("list_access_rulesets", "list_access_rules", "list_access_lists"),
-        # The ruleset, both access-list subnets, and where the global rules are.
-        says=(r"Staff web", r"10\.20\.0\.0", r"10\.30\.0\.5", r"Admin UI"),
+        # The ruleset; alice's own entries (a nat host, a subnet limited to ports,
+        # a denied host) and her group's subnet; where the rest has to be checked.
+        says=(
+            r"Staff web",
+            r"10\.20\.0\.0",
+            r"10\.30\.0\.5",
+            r"10\.40\.0\.0",
+            r"443",
+            r"10\.40\.0\.99",
+            r"Admin UI",
+            r"IPv6",
+        ),
     ),
     Case(
         "lockout",

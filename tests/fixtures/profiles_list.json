@@ -2,8 +2,24 @@
   "status": 200,
   "note": "3.2.4: all profiles, ordered by serial (captured 2026-11-13)",
   "body": {
-    "total": 2,
+    "total": 7,
     "profiles": [
+      {
+        "serial": "621162138649731239",
+        "common_name": "bob",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture 3",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "bob"
+      },
       {
         "serial": "1917045504553045148",
         "common_name": "alice",
@@ -21,6 +37,22 @@
         "username": "alice"
       },
       {
+        "serial": "2376103692265632136",
+        "common_name": "bob",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture 2",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "bob"
+      },
+      {
         "serial": "2877949965557316950",
         "common_name": "qa vpn test user_AUTOLOGIN",
         "algorithm": "secp384r1",
@@ -35,6 +67,54 @@
         "tls_crypt_v2": false,
         "last_used": "2026-10-02T00:00:00",
         "username": "qa vpn test user"
+      },
+      {
+        "serial": "7445217515188834530",
+        "common_name": "bob",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture 4",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "bob"
+      },
+      {
+        "serial": "7566404579717926323",
+        "common_name": "\u0436\u0430\u043d\u043d\u0430",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "\u0436\u0430\u043d\u043d\u0430"
+      },
+      {
+        "serial": "7833921060217914564",
+        "common_name": "bob",
+        "algorithm": "secp384r1",
+        "not_before": "2026-11-12T00:00:00",
+        "not_after": "2036-09-06T00:00:00",
+        "signing_ca": "1788980602",
+        "signing_ca_cn": "OpenVPN CA",
+        "self_signed": null,
+        "device_id": null,
+        "comment": "dev-stand fixture 1",
+        "profile_type": "userlogin",
+        "tls_crypt_v2": false,
+        "last_used": null,
+        "username": "bob"
       }
     ]
   }

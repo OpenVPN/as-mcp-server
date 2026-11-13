@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import subprocess
 import sys
 from collections.abc import Callable
@@ -27,26 +28,88 @@ LOCAL = ROOT / "dev" / ".local"
 STANDS = ("as-latest", "as-3-1-0")
 GROUP = "staff"
 RULESET = {"name": "Staff web", "comment": "dev-stand fixture"}
-PROFILE_USER = "alice"
+CONTRACTORS = "contractors"
+NON_LATIN_USER = "жанна"
+# A plain user with a password: the live tests sign in as bob to see what a
+# non-administrator gets. The password is generated once into NON_ADMIN_ENV.
+NON_ADMIN = "bob"
+NON_ADMIN_ENV = LOCAL / "non-admin.env"
+PLAIN_USERS = ("alice", NON_ADMIN, NON_LATIN_USER)
+MEMBERS = {
+    GROUP: ("alice", "mfa-admin"),
+    CONTRACTORS: (NON_ADMIN, NON_LATIN_USER),
+}
+# username -> comments of the userlogin profiles the stand must hold.
+PROFILES = {
+    "alice": ("dev-stand fixture",),
+    NON_ADMIN: tuple(f"dev-stand fixture {n}" for n in (1, 2, 3, 4)),
+    NON_LATIN_USER: ("dev-stand fixture",),
+}
+
+
+def _subnet(netip: str, prefix_length: int, *service: dict[str, Any]) -> dict[str, Any]:
+    subnet: dict[str, Any] = {
+        "ipv6": ":" in netip,
+        "netip": netip,
+        "prefix_length": prefix_length,
+    }
+    if service:
+        subnet["service"] = list(service)
+    return subnet
+
+
+def _entry(owner: dict[str, str], kind: str, **route: Any) -> dict[str, Any]:
+    return {**owner, "type": kind, "access_route": {"accept": True, **route}}
+
+
+# One of every shape the access-list endpoint can return: route and nat, a deny
+# entry, services (a port, a port range, an ICMP type), the user, group and
+# all_vpn_clients classes, access_from, a non-Latin owner.
+# The Web API refuses to write an IPv6 access list ("IPv6 support is not fully
+# implemented yet", 3.1.0 and 3.2.4) and does not return one either, so this one is
+# written with sacli; a live test checks that it stays invisible.
+IPV6_PROP = (CONTRACTORS, "access_to_ipv6.0", "+ROUTE:fd00:20::/64")
 ACCESS_ENTRIES = [
-    {
-        "groupname": GROUP,
-        "type": "access_to_ipv4",
-        "access_route": {
-            "type": "route",
-            "accept": True,
-            "subnet": {"ipv6": False, "netip": "10.20.0.0", "prefix_length": 24},
-        },
-    },
-    {
-        "username": PROFILE_USER,
-        "type": "access_to_ipv4",
-        "access_route": {
-            "type": "nat",
-            "accept": True,
-            "subnet": {"ipv6": False, "netip": "10.30.0.5", "prefix_length": 32},
-        },
-    },
+    _entry(
+        {"groupname": GROUP},
+        "access_to_ipv4",
+        type="route",
+        subnet=_subnet("10.20.0.0", 24),
+    ),
+    _entry(
+        {"username": "alice"},
+        "access_to_ipv4",
+        type="nat",
+        subnet=_subnet("10.30.0.5", 32),
+    ),
+    _entry(
+        {"username": "alice"},
+        "access_to_ipv4",
+        type="route",
+        subnet=_subnet(
+            "10.40.0.0",
+            24,
+            {"protocol": "tcp", "start_port": 443},
+            {"protocol": "udp", "start_port": 2000, "end_port": 2999},
+            {"protocol": "icmp", "type": "icmp-echo-request"},
+        ),
+    ),
+    _entry(
+        {"username": "alice"},
+        "access_to_ipv4",
+        type="route",
+        accept=False,
+        subnet=_subnet("10.40.0.99", 32),
+    ),
+    _entry({"groupname": CONTRACTORS}, "access_to_ipv4", type="all_vpn_clients"),
+    _entry({"username": NON_ADMIN}, "access_from_ipv4", type="user", username="alice"),
+    _entry({"username": NON_ADMIN}, "access_to_ipv4", type="group", groupname=GROUP),
+    _entry(
+        {"username": NON_LATIN_USER},
+        "access_to_ipv4",
+        type="route",
+        subnet=_subnet("10.50.0.0", 16),
+    ),
 ]
 RADIUS_USER = "radius-admin"
 RADIUS_CONFIG = {
@@ -122,6 +185,37 @@ def user_prop(stand: str, user: str, key: str, value: str) -> None:
     )
 
 
+def non_admin_password() -> str:
+    """The password of NON_ADMIN, generated on first use and kept out of git."""
+    if NON_ADMIN_ENV.exists():
+        return read_env(NON_ADMIN_ENV)["OPENVPN_AS_PASSWORD"]
+    password = secrets.token_urlsafe(18)
+    NON_ADMIN_ENV.touch(mode=0o600)
+    NON_ADMIN_ENV.write_text(
+        f"OPENVPN_AS_USER={NON_ADMIN}\nOPENVPN_AS_PASSWORD={password}\n",
+        encoding="utf-8",
+    )
+    return password
+
+
+def bare(value: Any) -> Any:
+    """An access-list entry without the empty fields the server adds on read."""
+    if isinstance(value, dict):
+        cleaned = {k: bare(v) for k, v in value.items()}
+        return {k: v for k, v in cleaned.items() if v not in (None, [], {})}
+    if isinstance(value, list):
+        return [bare(v) for v in value]
+    return value
+
+
+def canonical(entries: list[dict[str, Any]]) -> list[str]:
+    return sorted(json.dumps(entry, sort_keys=True) for entry in entries)
+
+
+def owner_of(entry: dict[str, Any]) -> str:
+    return entry.get("username") or entry["groupname"]
+
+
 async def seed(stand: str) -> None:
     env = read_env(LOCAL / f"{stand}.env")
     base = env["OPENVPN_AS_URL"].rstrip("/")
@@ -163,12 +257,13 @@ async def seed(stand: str) -> None:
         users = {p["name"]: p for p in (await post("/users/list", page))["profiles"]}
         groups = {g["name"] for g in (await post("/groups/list", page))["profiles"]}
 
-        if GROUP in groups:
-            log(f"group {GROUP}: present")
-        else:
-            user_prop(stand, GROUP, "type", "group")
-            user_prop(stand, GROUP, "group_declare", "true")
-            log(f"group {GROUP}: created")
+        for group in MEMBERS:
+            if group in groups:
+                log(f"group {group}: present")
+            else:
+                user_prop(stand, group, "type", "group")
+                user_prop(stand, group, "group_declare", "true")
+                log(f"group {group}: created")
 
         if RADIUS_USER in users:
             log(f"user {RADIUS_USER}: present")
@@ -178,20 +273,29 @@ async def seed(stand: str) -> None:
             user_prop(stand, RADIUS_USER, "user_auth_type", "radius")
             log(f"user {RADIUS_USER}: created (admin bound to the radius service)")
 
-        if "alice" in users:
-            log("user alice: present")
-        else:
-            user_prop(stand, "alice", "type", "user_connect")
-            log("user alice: created (no password; the tests never log in as alice)")
-        for member in ("alice", "mfa-admin"):
-            if member != "alice" and member not in users:
-                log(f"user {member}: missing, create it by hand (dev/README.md)")
-                continue
-            if users.get(member, {}).get("group") == GROUP:
-                log(f"{member} in {GROUP}: present")
+        for user in PLAIN_USERS:
+            if user in users:
+                log(f"user {user}: present")
             else:
-                user_prop(stand, member, "conn_group", GROUP)
-                log(f"{member} in {GROUP}: set")
+                user_prop(stand, user, "type", "user_connect")
+                log(f"user {user}: created")
+        if NON_ADMIN not in users or not NON_ADMIN_ENV.exists():
+            sacli(
+                stand,
+                *("--user", NON_ADMIN, "--new_pass", non_admin_password()),
+                "SetLocalPassword",
+            )
+            log(f"user {NON_ADMIN}: password set (dev/.local/{NON_ADMIN_ENV.name})")
+        for group, members in MEMBERS.items():
+            for member in members:
+                if member == "mfa-admin" and member not in users:
+                    log(f"user {member}: missing, create it by hand (dev/README.md)")
+                    continue
+                if users.get(member, {}).get("group") == group:
+                    log(f"{member} in {group}: present")
+                else:
+                    user_prop(stand, member, "conn_group", group)
+                    log(f"{member} in {group}: set")
 
         # /access/rulesets/list shows only rulesets that are assigned to an owner, so
         # a freshly added one is invisible until user-rulesets/modify: keep the id the
@@ -223,43 +327,45 @@ async def seed(stand: str) -> None:
         else:
             log("rules: present")
 
-        owned = await post(
-            "/profiles/list",
-            {
-                "page_size": 1,
-                "offset": 0,
-                "filters": {"username": {"operation": "equal", "value": PROFILE_USER}},
-            },
-        )
-        if owned["total"]:
-            log(f"connection profile of {PROFILE_USER}: present")
+        held = (await post("/profiles/list", {"page_size": 1000, "offset": 0}))[
+            "profiles"
+        ]
+        for user, comments in PROFILES.items():
+            have = {p["comment"] for p in held if p["username"] == user}
+            for comment in comments:
+                if comment in have:
+                    continue
+                # The answer is the profile itself (a private key); it is not kept.
+                created = await http.post(
+                    "/profiles/create",
+                    json={
+                        "username": user,
+                        "profile_type": "userlogin",
+                        "comment": comment,
+                    },
+                    headers=headers,
+                )
+                created.raise_for_status()
+                log(f"connection profile of {user} ({comment!r}): created")
+            log(f"connection profiles of {user}: {len(comments)} present")
+
+        owner, key, value = IPV6_PROP
+        props = json.loads(sacli(stand, "--user", owner, "UserPropGet"))
+        if props.get(owner, {}).get(key) == value:
+            log(f"IPv6 access list of {owner}: present")
         else:
-            # The answer is the profile itself (a private key); it is not kept.
-            created = await http.post(
-                "/profiles/create",
-                json={
-                    "username": PROFILE_USER,
-                    "profile_type": "userlogin",
-                    "comment": "dev-stand fixture",
-                },
-                headers=headers,
-            )
-            created.raise_for_status()
-            log(f"connection profile of {PROFILE_USER}: created")
+            user_prop(stand, owner, key, value)
+            log(f"IPv6 access list of {owner}: set with sacli")
 
         lists = (await post("/userprop/access/list", {}))["profiles"]
-        owners = {e.get("username") or e.get("groupname") for e in lists}
-        for entry in ACCESS_ENTRIES:
-            owner = entry.get("username") or entry["groupname"]
-            if owner in owners:
-                log(f"access list of {owner}: present")
+        for owner in dict.fromkeys(owner_of(e) for e in ACCESS_ENTRIES):
+            wanted = [e for e in ACCESS_ENTRIES if owner_of(e) == owner]
+            current = [bare(e) for e in lists if owner_of(e) == owner]
+            if canonical(current) == canonical(wanted):
+                log(f"access list of {owner}: present ({len(wanted)} entries)")
             else:
-                await post("/userprop/access/set", {"items_append": [entry]})
-                subnet = entry["access_route"]["subnet"]
-                log(
-                    f"access list of {owner}: "
-                    f"{subnet['netip']}/{subnet['prefix_length']} added"
-                )
+                await post("/userprop/access/set", {"items_set": wanted})
+                log(f"access list of {owner}: set to {len(wanted)} entries")
 
 
 async def wait_for_api(base: str) -> None:

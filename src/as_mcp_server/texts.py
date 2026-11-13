@@ -33,5 +33,9 @@ MSG_ONE_TARGET = "Give exactly one of {a} or {b}."
 NOTE_GLOBAL_IP = (
     "Global IP/subnet rules are not visible through the API; check the Admin UI."
 )
+# Measured on 3.1.0 and 3.2.4: an IPv6 access list set on the server is not in the
+# answer of /userprop/access/list, and the API refuses to write one.
+NOTE_IPV6_ACCESS = "IPv6 access lists are not returned by the API."
+NOTE_ACCESS_LISTS = f"{NOTE_GLOBAL_IP} {NOTE_IPV6_ACCESS}"
 CLIENT_REASON = "Disconnected by your administrator."
 DEFAULT_REASON = "Disconnected through as-mcp-server"

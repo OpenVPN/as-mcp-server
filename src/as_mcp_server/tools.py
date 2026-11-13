@@ -19,7 +19,7 @@ from pydantic import Field
 from as_mcp_server import __version__
 from as_mcp_server.client import ClientHolder, redact
 from as_mcp_server.config import describe
-from as_mcp_server.texts import NOTE_GLOBAL_IP
+from as_mcp_server.texts import NOTE_ACCESS_LISTS
 from as_mcp_server.untrusted import check_log_reports, check_vpn_status
 from as_mcp_server.versions import (
     MINIMUM_VERSION,
@@ -754,17 +754,20 @@ def _register_access_list_tools(mcp: FastMCP, holder: ClientHolder) -> None:
     @mcp.tool(
         name="list_access_lists",
         description=(
-            "IP/subnet access lists set on users and groups (not the rulesets of "
+            "IPv4 access lists set on users and groups (not the rulesets of "
             "list_access_rulesets). Each entry in 'profiles' carries username or "
-            "groupname, type (access_to_ipv4, access_to_ipv6, access_from_ipv4, "
-            "access_from_ipv6) and access_route: type (route, nat, user, group, all, "
-            "all_vpn_clients, all_s2c_subnets), accept (true allows, false denies) "
-            "and, for route and nat, subnet with netip, prefix_length and service (an "
-            "empty service list means every protocol and port). Omit usernames and "
-            "group_names for every entry; give one or both for only the named users "
-            "and groups. A user also gets the entries of the user's group, so ask "
-            "for both. 'note' says what this list cannot show: the global IP/subnet "
-            "rules."
+            "groupname, type (access_to_ipv4: what the owner may reach; "
+            "access_from_ipv4: who may reach the owner) and access_route: type "
+            "(route, nat, user, group, all, all_vpn_clients, all_s2c_subnets), "
+            "accept (true allows, false denies) and, for route and nat, subnet with "
+            "netip, prefix_length and service (ports as protocol with start_port and "
+            "end_port, ICMP as protocol icmp with type; an empty service list means "
+            "every protocol and port); for user and group the username or groupname "
+            "the entry points at. Omit usernames and group_names for every entry; "
+            "give one or both for only the named users and groups. A user also gets "
+            "the entries of the user's group, so ask for both. 'note' says what this "
+            "list cannot show: the global IP/subnet rules, and IPv6 access lists, "
+            "which the API does not return even when the server has them."
         ),
         annotations=READ,
         tags={"read"},
@@ -804,4 +807,4 @@ def _register_access_list_tools(mcp: FastMCP, holder: ClientHolder) -> None:
         result = redact(await holder.get().post("/userprop/access/list", body))
         if not isinstance(result, dict):
             result = {"profiles": result}
-        return {**result, "note": NOTE_GLOBAL_IP}
+        return {**result, "note": NOTE_ACCESS_LISTS}
