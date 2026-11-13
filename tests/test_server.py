@@ -172,6 +172,29 @@ async def test_connection_info_is_loud_about_insecure_tls_and_old_servers(
     assert "3.0.2" in result["server_warning"] and "3.1" in result["server_warning"]
 
 
+async def test_connection_info_shows_write_mode_off_by_default(tmp_path: Path) -> None:
+    mcp, _ = server_for(tmp_path, {})
+    async with Client(mcp) as client:
+        result = (await client.call_tool("connection_info", {})).structured_content
+    assert result["write_tools"] is False and result["approval"] == "prompt"
+
+
+async def test_connection_info_warns_about_an_untested_server_in_write_mode(
+    tmp_path: Path,
+) -> None:
+    status, info = load_fixture("server_info")
+    newer = {SERVER_INFO: (status, {**info, "version": "3.3.0"})}
+    mcp, _ = server_for(tmp_path, newer, write_tools=True, approval="auto")
+    async with Client(mcp) as client:
+        result = (await client.call_tool("connection_info", {})).structured_content
+    assert result["write_tools"] is True and result["approval"] == "auto"
+    assert "is not on the tested list" in result["server_warning"]
+    mcp, _ = server_for(tmp_path, newer)
+    async with Client(mcp) as client:
+        result = (await client.call_tool("connection_info", {})).structured_content
+    assert result["server_warning"] is None
+
+
 async def test_connection_info_reports_an_mfa_challenge_as_error_text(
     tmp_path: Path,
 ) -> None:

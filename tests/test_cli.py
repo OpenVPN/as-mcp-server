@@ -221,6 +221,7 @@ def test_check_reports_url_user_server_and_sources(
     assert "TLS:      verified" in out
     assert "Server:   Access Server 3.2.4 (f3c295a7) on Ubuntu 26.04.1 LTS" in out
     assert "MemoryKeyring" in out
+    assert "Writes:   off (OPENVPN_AS_WRITE_TOOLS=false)" in out
     assert "check-test-password" not in out
 
 
@@ -240,6 +241,25 @@ def test_check_warns_about_old_servers_and_insecure_tls(
     out = capsys.readouterr().out
     assert "TLS:      DISABLED (OPENVPN_AS_INSECURE=true)" in out
     assert "WARNING: Access Server 3.0.2 is below the supported minimum 3.1" in out
+
+
+def test_check_shows_write_mode_and_the_approval_setting(
+    routed, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    status, info = load_fixture("server_info")
+    routed({SERVER_INFO: (status, {**info, "version": "3.3.0"})})
+    for name, value in {
+        "URL": "https://vpn.example.com:943",
+        "USER": "openvpn",
+        "PASSWORD": "pw",
+        "WRITE_TOOLS": "true",
+        "APPROVAL": "auto",
+    }.items():
+        monkeypatch.setenv(f"OPENVPN_AS_{name}", value)
+    assert cli.main(["check"]) == 0
+    out = capsys.readouterr().out
+    assert "Writes:   on (OPENVPN_AS_WRITE_TOOLS=true), approval: auto" in out
+    assert "WARNING: Access Server 3.3 is not on the tested list" in out
 
 
 @pytest.mark.usefixtures("no_keyring")

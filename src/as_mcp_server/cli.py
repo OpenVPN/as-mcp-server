@@ -31,7 +31,12 @@ from as_mcp_server.config import (
 )
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
-from as_mcp_server.tools import MINIMUM_VERSION, below_minimum_version
+from as_mcp_server.versions import (
+    MINIMUM_VERSION,
+    below_minimum_version,
+    untested_warning,
+    version_status,
+)
 
 AGENT_CONFIG_SNIPPET = """\
 Register the server with your agent (no secret is stored in its configuration):
@@ -188,12 +193,20 @@ def _check(settings: Settings) -> int:
         f"{info.get('os_distribution', '?')}"
     )
     print(f"Keyring:  {describe(settings)['keyring_backend']}")
+    if settings.write_tools:
+        print(
+            f"Writes:   on (OPENVPN_AS_WRITE_TOOLS=true), approval: {settings.approval}"
+        )
+    else:
+        print("Writes:   off (OPENVPN_AS_WRITE_TOOLS=false)")
     if below_minimum_version(version):
         print(
             f"WARNING: Access Server {version} is below the supported minimum "
             f"{MINIMUM_VERSION[0]}.{MINIMUM_VERSION[1]}; Web API v0.2 endpoints "
             "may be missing."
         )
+    elif settings.write_tools and version_status(version) == "untested":
+        print(f"WARNING: {untested_warning(version)}")
     return 0
 
 

@@ -20,6 +20,12 @@ from as_mcp_server import __version__
 from as_mcp_server.client import ClientHolder, redact
 from as_mcp_server.config import describe
 from as_mcp_server.untrusted import check_log_reports, check_vpn_status
+from as_mcp_server.versions import (
+    MINIMUM_VERSION,
+    below_minimum_version,
+    untested_warning,
+    version_status,
+)
 
 READ = ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
@@ -27,7 +33,6 @@ READ = ToolAnnotations(
 AUTH = ToolAnnotations(
     readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
 )
-MINIMUM_VERSION = (3, 1)
 
 SortDirection = Literal["asc", "desc"]
 UserOrderBy = Literal["name", "admin", "autologin", "group", "mfa_status"]
@@ -124,6 +129,8 @@ def _register_diagnostics(mcp: FastMCP, holder: ClientHolder) -> None:
             "server_warning": None,
             "error": None,
             "mcp_version": __version__,
+            "write_tools": holder.settings.write_tools,
+            "approval": holder.settings.approval,
         }
         try:
             client = holder.get()
@@ -141,6 +148,8 @@ def _register_diagnostics(mcp: FastMCP, holder: ClientHolder) -> None:
                     f"{MINIMUM_VERSION[0]}.{MINIMUM_VERSION[1]}; Web API v0.2 "
                     "endpoints may be missing."
                 )
+            elif holder.settings.write_tools and version_status(version) == "untested":
+                result["server_warning"] = untested_warning(version)
         except ToolError as exc:
             result["error"] = str(exc)
             if holder.created:
@@ -675,11 +684,3 @@ def _register_access_tools(mcp: FastMCP, holder: ClientHolder) -> None:
         if filters:
             body["filters"] = filters
         return redact(await holder.get().post("/access/rules/list", body))
-
-
-def below_minimum_version(version: str) -> bool:
-    try:
-        major, minor = (int(part) for part in version.split(".")[:2])
-    except ValueError:
-        return False
-    return (major, minor) < MINIMUM_VERSION

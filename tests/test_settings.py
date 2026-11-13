@@ -75,3 +75,32 @@ def test_unknown_openvpn_as_variables_are_ignored(
         "OPENVPN_AS_TOOLS", "list_users"
     )  # reserved, not implemented yet
     assert Settings().url is None
+
+
+@pytest.mark.usefixtures("clean_env")
+def test_write_mode_is_off_and_approval_is_prompt_by_default() -> None:
+    settings = Settings()
+    assert settings.write_tools is False
+    assert settings.approval == "prompt"
+    assert settings.output_dir is None
+    assert settings.resolved_output_dir() == settings.config_dir / "output"
+
+
+@pytest.mark.usefixtures("clean_env")
+def test_the_write_mode_variables_are_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OPENVPN_AS_WRITE_TOOLS", "true")
+    monkeypatch.setenv("OPENVPN_AS_APPROVAL", "auto")
+    monkeypatch.setenv("OPENVPN_AS_OUTPUT_DIR", str(tmp_path / "out"))
+    settings = Settings()
+    assert settings.write_tools is True
+    assert settings.approval == "auto"
+    assert settings.resolved_output_dir() == tmp_path / "out"
+
+
+@pytest.mark.usefixtures("clean_env")
+def test_an_unknown_approval_mode_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENVPN_AS_APPROVAL", "yes")
+    with pytest.raises(ValidationError):
+        Settings()

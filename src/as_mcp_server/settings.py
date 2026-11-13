@@ -16,6 +16,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+Approval = Literal["prompt", "auto"]
 
 
 def default_config_dir() -> Path:
@@ -36,3 +37,9 @@ class Settings(BaseSettings):
     timeout: float = Field(default=30.0, gt=0)
     log_level: LogLevel = "WARNING"
     config_dir: Path = Field(default_factory=default_config_dir)
+    write_tools: bool = False
+    approval: Approval = "prompt"
+    output_dir: Path | None = None
+
+    def resolved_output_dir(self) -> Path:
+        return self.output_dir or self.config_dir / "output"
