@@ -336,8 +336,20 @@ async def test_access_lists_narrow_to_the_named_owners_on_both_servers(stand) ->
     mcp = build(settings)
     everything = await call(mcp, "list_access_lists")
     assert owners(everything) == sorted(
-        ["alice"] * 3 + ["bob"] * 2 + ["жанна", "contractors", "staff"]
+        ["alice"] * 3
+        + ["bob"] * 2
+        + ["жанна"] * 2
+        + ["mfa-admin", "contractors", "staff"]
     )
+    assert {e["access_route"]["type"] for e in everything["profiles"]} == {
+        "route",
+        "nat",
+        "user",
+        "group",
+        "all",
+        "all_vpn_clients",
+        "all_s2c_subnets",
+    }
     assert everything["note"] == NOTE_ACCESS_LISTS
 
     async def of(**arguments) -> list[str]:
@@ -347,7 +359,7 @@ async def test_access_lists_narrow_to_the_named_owners_on_both_servers(stand) ->
 
     # Without the tool's object_type filter the server adds every group entry here.
     assert await of(usernames=["alice"]) == ["alice"] * 3
-    assert await of(usernames=["жанна"]) == ["жанна"]
+    assert await of(usernames=["жанна"]) == ["жанна"] * 2
     assert await of(usernames=["bob", "alice"]) == ["alice"] * 3 + ["bob"] * 2
     assert await of(group_names=["contractors"]) == ["contractors"]
     assert await of(group_names=["staff", "contractors"]) == ["contractors", "staff"]

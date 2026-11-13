@@ -127,7 +127,10 @@ async def test_access_lists_of_everyone_are_listed_with_the_note(
     assert result["note"] == NOTE_ACCESS_LISTS
     owners = [e.get("username") or e["groupname"] for e in result["profiles"]]
     assert sorted(owners) == sorted(
-        ["alice"] * 3 + ["bob"] * 2 + ["жанна", "contractors", "staff"]
+        ["alice"] * 3
+        + ["bob"] * 2
+        + ["жанна"] * 2
+        + ["mfa-admin", "contractors", "staff"]
     )
 
 
@@ -135,8 +138,8 @@ async def test_access_lists_of_everyone_are_listed_with_the_note(
 async def test_every_shape_of_access_entry_reaches_the_agent_unchanged(
     tmp_path: Path, fixture: str
 ) -> None:
-    """Ports, a port range, an ICMP type, a deny entry, the user, group and
-    all_vpn_clients classes, access_from: the stand holds one of each."""
+    """Ports, a port range, an ICMP type, a deny entry, access_from and every class
+    of the API's enum: the stand holds one of each."""
     _, captured = load_fixture(fixture)
     mcp, _ = server_for(tmp_path, {ACCESS: load_fixture(fixture)})
     async with Client(mcp) as client:
@@ -148,7 +151,9 @@ async def test_every_shape_of_access_entry_reaches_the_agent_unchanged(
         "nat",
         "user",
         "group",
+        "all",
         "all_vpn_clients",
+        "all_s2c_subnets",
     }
     assert [r["subnet"]["netip"] for r in routes if r["accept"] is False] == [
         "10.40.0.99"

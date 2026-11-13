@@ -63,12 +63,16 @@ def _entry(owner: dict[str, str], kind: str, **route: Any) -> dict[str, Any]:
 
 
 # One of every shape the access-list endpoint can return: route and nat, a deny
-# entry, services (a port, a port range, an ICMP type), the user, group and
-# all_vpn_clients classes, access_from, a non-Latin owner.
-# The Web API refuses to write an IPv6 access list ("IPv6 support is not fully
-# implemented yet", 3.1.0 and 3.2.4) and does not return one either, so this one is
-# written with sacli; a live test checks that it stays invisible.
-IPV6_PROP = (CONTRACTORS, "access_to_ipv6.0", "+ROUTE:fd00:20::/64")
+# entry, services (a port, a port range, an ICMP type), the user, group,
+# all_vpn_clients and all_s2c_subnets classes, access_from, a non-Latin owner.
+# Two things the Web API refuses to write, set with sacli instead (3.1.0, 3.2.4):
+# an IPv6 access list ("IPv6 support is not fully implemented yet"), which the API
+# does not return either (a live test checks that it stays invisible), and the
+# class `all` ("Adding 'all' access type is not implemented"), which it returns.
+SACLI_PROPS = (
+    (CONTRACTORS, "access_to_ipv6.0", "+ROUTE:fd00:20::/64"),
+    ("mfa-admin", "access_from.0", "+ALL"),
+)
 ACCESS_ENTRIES = [
     _entry(
         {"groupname": GROUP},
@@ -110,6 +114,7 @@ ACCESS_ENTRIES = [
         type="route",
         subnet=_subnet("10.50.0.0", 16),
     ),
+    _entry({"username": NON_LATIN_USER}, "access_to_ipv4", type="all_s2c_subnets"),
 ]
 RADIUS_USER = "radius-admin"
 RADIUS_CONFIG = {
@@ -241,7 +246,10 @@ async def seed(stand: str) -> None:
 
         async def post(path: str, body: dict[str, Any]) -> Any:
             response = await http.post(path, json=body, headers=headers)
-            response.raise_for_status()
+            if response.is_error:
+                raise RuntimeError(
+                    f"POST {path} -> {response.status_code}: {response.text[:300]}"
+                )
             # user-rulesets/modify and rules/modify answer 200 with an empty body
             return response.json() if response.content else None
 
@@ -349,13 +357,15 @@ async def seed(stand: str) -> None:
                 log(f"connection profile of {user} ({comment!r}): created")
             log(f"connection profiles of {user}: {len(comments)} present")
 
-        owner, key, value = IPV6_PROP
-        props = json.loads(sacli(stand, "--user", owner, "UserPropGet"))
-        if props.get(owner, {}).get(key) == value:
-            log(f"IPv6 access list of {owner}: present")
-        else:
-            user_prop(stand, owner, key, value)
-            log(f"IPv6 access list of {owner}: set with sacli")
+        for owner, key, value in SACLI_PROPS:
+            props = json.loads(sacli(stand, "--user", owner, "UserPropGet"))
+            if props.get(owner, {}).get(key) == value:
+                log(f"{key} of {owner}: present")
+            elif owner not in users and owner not in MEMBERS:
+                log(f"{key} of {owner}: skipped, {owner} does not exist")
+            else:
+                user_prop(stand, owner, key, value)
+                log(f"{key} of {owner}: set with sacli")
 
         lists = (await post("/userprop/access/list", {}))["profiles"]
         for owner in dict.fromkeys(owner_of(e) for e in ACCESS_ENTRIES):

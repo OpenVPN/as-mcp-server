@@ -78,6 +78,14 @@
         "type": "access_to_ipv4"
       },
       {
+        "username": "mfa-admin",
+        "access_route": {
+          "type": "all",
+          "accept": true
+        },
+        "type": "access_from_ipv4"
+      },
+      {
         "username": "\u0436\u0430\u043d\u043d\u0430",
         "access_route": {
           "type": "route",
@@ -88,6 +96,14 @@
             "prefix_length": 16,
             "service": []
           }
+        },
+        "type": "access_to_ipv4"
+      },
+      {
+        "username": "\u0436\u0430\u043d\u043d\u0430",
+        "access_route": {
+          "type": "all_s2c_subnets",
+          "accept": true
         },
         "type": "access_to_ipv4"
       },

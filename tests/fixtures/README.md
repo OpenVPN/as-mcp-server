@@ -12,7 +12,7 @@ on purpose: tests assert that the server redacts them.
 
 | file | status | note |
 | --- | --- | --- |
-| `access_lists.json` | 200 | 3.2.4: every access list, one entry of each shape: route, nat, a deny, services (port, port range, ICMP type), `user`, `group`, `all_vpn_clients`, `access_from_ipv4`, a non-Latin owner. The IPv6 list of `contractors` exists on the server and is absent here (captured 2026-11-13) |
+| `access_lists.json` | 200 | 3.2.4: every access list, one entry of each shape: route, nat, a deny, services (port, port range, ICMP type), `user`, `group`, `all`, `all_vpn_clients`, `all_s2c_subnets`, `access_from_ipv4`, a non-Latin owner. The IPv6 list of `contractors` exists on the server and is absent here (captured 2026-11-13) |
 | `access_lists_3_1_0.json` | 200 | the same on 3.1.0 |
 | `access_rules.json` | 200 | rules of the staff ruleset |
 | `access_rules_filter_type.json` | 200 | type + match_data filters |
