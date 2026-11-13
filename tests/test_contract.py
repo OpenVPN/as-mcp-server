@@ -75,3 +75,18 @@ async def test_the_two_added_tools_are_read_only() -> None:
             "idempotentHint": True,
             "openWorldHint": True,
         }, name
+
+
+async def test_write_mode_keeps_the_fifteen_read_mode_tools_unchanged() -> None:
+    read_mode = await dump(build(settings()))
+    write_mode = await dump(build(settings(write_tools=True)))
+    names = {tool["name"] for tool in read_mode}
+    assert [tool for tool in write_mode if tool["name"] in names] == read_mode
+    assert [
+        tool for tool in write_mode if tool["name"] in {t["name"] for t in released()}
+    ] == released()
+
+
+async def test_no_write_tool_is_registered_unless_the_switch_is_on() -> None:
+    for tool in await dump(build(settings())):
+        assert tool["annotations"]["readOnlyHint"] is True or tool["name"] == "login"

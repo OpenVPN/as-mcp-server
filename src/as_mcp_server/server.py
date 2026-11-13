@@ -11,11 +11,13 @@ import httpx
 from fastmcp import FastMCP
 
 from as_mcp_server import __version__
+from as_mcp_server.audit import AuditLog
 from as_mcp_server.client import ClientHolder
 from as_mcp_server.config import DEFAULT_PROFILE, INSECURE_WARNING
 from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.settings import Settings
 from as_mcp_server.tools import register_tools
+from as_mcp_server.writes import WriteDeps
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +83,43 @@ INSTRUCTIONS = (
 )
 
 
+# Verbatim, including its line breaks.
+WRITE_OPENING = (
+    "Read and write access to one OpenVPN Access Server through its Web API v0.2 "
+    "(Access Server 3.1 or newer).\n"
+    "Make changes only through the tools of this server. You never describe how to "
+    "change Access Server by\n"
+    "hand: no Admin UI steps or menus, no sacli or shell commands, no file paths, no "
+    "config keys. The Admin UI\n"
+    "was redesigned in Access Server 3.x, so menus and steps you remember are wrong "
+    "for this server.\n"
+    "Every change is shown to the administrator for approval before it is written, "
+    "unless approval is set to\n"
+    "auto. When a tool answers that a change was cancelled, refused, or that the app "
+    "cannot show an approval\n"
+    "prompt, repeat that answer word for word and stop; do not retry and do not look "
+    "for another way.\n"
+    "Never ask for, show or repeat passwords, private keys, profile contents or "
+    "download links. Tools save\n"
+    "them to a local file and return its path; tell the user the path.\n"
+    "A tool that takes a list handles up to 100 items in one call with one approval; "
+    "prefer one list call\n"
+    "over many single calls.\n"
+    "To block a user, use block_user; it also disconnects the user's sessions.\n"
+)
+# The read-only opening ends where the troubleshooting advice starts.
+_SHARED_FROM = "Start with connection_info when anything looks wrong"
+WRITE_INSTRUCTIONS = WRITE_OPENING + INSTRUCTIONS[INSTRUCTIONS.index(_SHARED_FROM) :]
+
+
+def register_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
+    """Register the write tools. Called only when OPENVPN_AS_WRITE_TOOLS is true.
+
+    It lives here, not in writes.py, so the tools modules can import writes without
+    a cycle.
+    """
+
+
 def build(
     settings: Settings | None = None,
     *,
@@ -96,9 +135,12 @@ def build(
     mcp = FastMCP(
         name="as-mcp-server",
         version=__version__,
-        instructions=INSTRUCTIONS,
+        instructions=WRITE_INSTRUCTIONS if settings.write_tools else INSTRUCTIONS,
         mask_error_details=True,
     )
     mcp.add_middleware(limit if limit is not None else ToolCallLimit())
-    register_tools(mcp, ClientHolder(settings, profile, transport))
+    holder = ClientHolder(settings, profile, transport)
+    register_tools(mcp, holder)
+    if settings.write_tools:
+        register_write_tools(mcp, WriteDeps(holder, AuditLog(settings.config_dir)))
     return mcp

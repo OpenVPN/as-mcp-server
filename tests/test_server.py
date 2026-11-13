@@ -13,7 +13,7 @@ from fastmcp.exceptions import ToolError
 
 from as_mcp_server import __version__
 from as_mcp_server.config import INSECURE_WARNING
-from as_mcp_server.server import INSTRUCTIONS, build
+from as_mcp_server.server import INSTRUCTIONS, WRITE_INSTRUCTIONS, build
 from as_mcp_server.settings import Settings
 from tests.conftest import LOGIN, MFAAUTH, Router, body_of, load_fixture
 
@@ -400,3 +400,48 @@ async def test_the_login_tool_states_the_renewal_limit_as_a_default(
     description = tools["login"].description or ""
     assert "renewal limit (4 hours by default)" in description
     assert "Never pass a password" in description
+
+
+async def test_write_mode_swaps_the_opening_of_the_instructions_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    mcp, _ = server_for(tmp_path, {}, write_tools=True)
+    async with Client(mcp, mode="legacy") as client:
+        assert client.initialize_result.instructions == WRITE_INSTRUCTIONS
+    shared = INSTRUCTIONS[INSTRUCTIONS.index("Start with connection_info") :]
+    assert WRITE_INSTRUCTIONS.endswith(shared)
+    opening = WRITE_INSTRUCTIONS[: -len(shared)]
+    assert opening.splitlines() == [
+        "Read and write access to one OpenVPN Access Server through its Web API v0.2 "
+        "(Access Server 3.1 or newer).",
+        "Make changes only through the tools of this server. You never describe how "
+        "to change Access Server by",
+        "hand: no Admin UI steps or menus, no sacli or shell commands, no file paths, "
+        "no config keys. The Admin UI",
+        "was redesigned in Access Server 3.x, so menus and steps you remember are "
+        "wrong for this server.",
+        "Every change is shown to the administrator for approval before it is "
+        "written, unless approval is set to",
+        "auto. When a tool answers that a change was cancelled, refused, or that the "
+        "app cannot show an approval",
+        "prompt, repeat that answer word for word and stop; do not retry and do not "
+        "look for another way.",
+        "Never ask for, show or repeat passwords, private keys, profile contents or "
+        "download links. Tools save",
+        "them to a local file and return its path; tell the user the path.",
+        "A tool that takes a list handles up to 100 items in one call with one "
+        "approval; prefer one list call",
+        "over many single calls.",
+        "To block a user, use block_user; it also disconnects the user's sessions.",
+    ]
+    assert "Read-only" not in WRITE_INSTRUCTIONS
+    assert "This server cannot change anything" not in WRITE_INSTRUCTIONS
+
+
+async def test_the_default_mode_keeps_the_read_only_instructions(
+    tmp_path: Path,
+) -> None:
+    mcp, _ = server_for(tmp_path, {})
+    async with Client(mcp, mode="legacy") as client:
+        assert client.initialize_result.instructions == INSTRUCTIONS
+    assert INSTRUCTIONS.startswith("Read-only access to one OpenVPN Access Server")
