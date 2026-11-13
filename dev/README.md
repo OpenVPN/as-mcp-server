@@ -8,8 +8,12 @@
 - `git` to get the repository; an MCP-capable agent (Claude Code, Codex, ...) only for the
   manual tests at the end of this file.
 
-    docker compose -f dev/compose.yaml --profile compat up -d     # start 3.2.3 (:943), 3.1.0 (:944) and FreeRADIUS
+    docker compose -f dev/compose.yaml --profile compat up -d     # start 3.2.4 (:943), 3.1.0 (:944) and FreeRADIUS
     docker compose -f dev/compose.yaml --profile compat down      # stop; add -v to wipe the servers
+
+Access Server 3.2.4 has no image on Docker Hub yet (checked 2026-11-13), so `as-latest` is built
+locally from the official packages by `dev/as-latest/Dockerfile`; the first `up` takes a few
+minutes. Switch `dev/compose.yaml` back to the official image once it is published.
 
 Admin user is `openvpn`; the generated password is in the container log:
 `docker logs as-latest 2>&1 | grep 'Auto-generated pass'`. Credentials for the live tests are
@@ -21,7 +25,7 @@ containers are wiped: `OPENVPN_AS_URL`, `OPENVPN_AS_USER`, `OPENVPN_AS_PASSWORD`
 
 Users on both servers: `openvpn` (admin), `mfa-admin` (admin, TOTP required), `radius-admin`
 (admin, `user_auth_type=radius`, PIN challenge from FreeRADIUS), `alice` (plain, group `staff`). Access ruleset "Staff web" (id 1 on a freshly seeded stand) belongs to group `staff` and holds two
-domain-routing rules. 3.2.3 runs on a trial subscription (`license/info` reports
+domain-routing rules. 3.2.4 runs on a trial subscription (`license/info` reports
 `subscription`); 3.1.0 is unlicensed on purpose.
 
 Lockout: five wrong passwords or MFA codes lock a user for 15 minutes. Clear it with
@@ -36,19 +40,19 @@ Below `<BIN>` is the absolute path of `.venv/bin/as-mcp-server` in this clone (a
 `uv sync`). The stand uses self-signed certificates, so every entry needs
 `OPENVPN_AS_INSECURE=true`. One MCP entry = one server and one account.
 
-Plain admin on 3.2.3 and on 3.1.0, password from `dev/.local/*.env` (Claude Code):
+Plain admin on 3.2.4 and on 3.1.0, password from `dev/.local/*.env` (Claude Code):
 
     claude mcp add openvpn-as-322 -e OPENVPN_AS_URL=https://localhost:943 -e OPENVPN_AS_USER=openvpn -e OPENVPN_AS_PASSWORD=<from as-latest.env> -e OPENVPN_AS_INSECURE=true -- <BIN>
     claude mcp add openvpn-as-310 -e OPENVPN_AS_URL=https://localhost:944 -e OPENVPN_AS_USER=openvpn -e OPENVPN_AS_PASSWORD=<from as-3-1-0.env> -e OPENVPN_AS_INSECURE=true -- <BIN>
 
-MFA admin on 3.2.3, password stored in the OS keyring (no secret in the agent config):
+MFA admin on 3.2.4, password stored in the OS keyring (no secret in the agent config):
 
     OPENVPN_AS_INSECURE=true <BIN> setup --url https://localhost:943 --username mfa-admin
     claude mcp add openvpn-as-mfa -e OPENVPN_AS_INSECURE=true -- <BIN>
 
 `setup` asks for the password (`OPENVPN_AS_PASSWORD` in `mfa-admin.env`) and then for the
 current TOTP code. There is no authenticator app for the stand; compute the code from the
-secret in `mfa-admin.env` (`MFA_ADMIN_TOTP_SECRET` for 3.2.3, `MFA_ADMIN_TOTP_SECRET_3_1_0`
+secret in `mfa-admin.env` (`MFA_ADMIN_TOTP_SECRET` for 3.2.4, `MFA_ADMIN_TOTP_SECRET_3_1_0`
 for 3.1.0), from the repository root:
 
     uv run python -c "from tests.live.conftest import LOCAL, read_env_file, totp; print(totp(read_env_file(LOCAL/'mfa-admin.env')['MFA_ADMIN_TOTP_SECRET']))"
@@ -62,17 +66,17 @@ results per tool and the lockout reset are in the next section.
 ## Tools and test prompts for the stand
 
 All 13 tools, one or two English prompts each, and what the stand answers. Results
-are the same on 3.2.3 (`:943`) and 3.1.0 (`:944`) unless a cell says otherwise. Numbers for
+are the same on 3.2.4 (`:943`) and 3.1.0 (`:944`) unless a cell says otherwise. Numbers for
 logs grow with every API login. `list_access_rules` replaces the original plan's
 `list_access_policysets` (that endpoint does not exist on 3.1–3.2.3).
 
 | Tool | Prompt | Expected on the stand |
 | --- | --- | --- |
-| `connection_info` | "Check the connection to the VPN server." | `username: openvpn`, `server.version` 3.2.3 (build 8444f22d) or 3.1.0 (e22fe316), `tls.insecure: true` with the warning text, `error: null`. Through `openvpn-as-mfa` before `login`: `server: null`, `error` says a one-time MFA code is required. |
+| `connection_info` | "Check the connection to the VPN server." | `username: openvpn`, `server.version` 3.2.4 (build f3c295a7) or 3.1.0 (e22fe316), `tls.insecure: true` with the warning text, `error: null`. Through `openvpn-as-mfa` before `login`: `server: null`, `error` says a one-time MFA code is required. |
 | `login` | "Here is the code 123456, log in." (MFA entry only) | correct code: `mfa_used: true`, `user_type: admin`, `expires_after` +10 min, `renewable_until` +4 h; wrong code: "rejected the MFA code ... 30 seconds ... used once ... 5 failures"; on the plain `openvpn` entry any code gives `mfa_used: false`. |
 | `get_status_overview` | "Is my VPN healthy?" / "Show host.name and vpn.server.daemon.enable." | version and build, `eula_status.eula_accepted: false`, `dco_module.available: false` ("Kernel module not loaded"), `configuration_items.total: 0`; with the two names `total: 2`, `host.name` = `172.21.0.2` (943) / `172.21.0.3` (944), `vpn.server.daemon.enable: true`. |
 | `get_server_status` | "What is the status of the server's internal services?" | `service_status` with about 40 services (`web`, `api`, `auth`, `openvpn_0`…`openvpn_19`, `subscription`, ...), `auth_module_status`, `last_restarted`. |
-| `get_server_info` | "Which Access Server version and OS is this?" | `3.2.3` / `8444f22d` / `Ubuntu 26.04.1 LTS` on 943; `3.1.0` / `e22fe316` / `Ubuntu 24.04.4 LTS` on 944. |
+| `get_server_info` | "Which Access Server version and OS is this?" | `3.2.4` / `f3c295a7` / `Ubuntu 26.04.1 LTS` on 943; `3.1.0` / `e22fe316` / `Ubuntu 24.04.4 LTS` on 944. |
 | `get_active_vpn_connections` | "Who is connected to the VPN right now?" | `vpn_clients: []` (nobody), `vpn_daemons` with 20 entries. With a client connected (below): one entry with `username` and `common_name`; a name with spaces comes back withheld in both. |
 | `get_log_reports` | "Show the last 5 log records." / "Which logins failed in the last 7 days?" / "Log records of user openvpn." | 5 records and `total` around 160 (943) / 140 (944); with `errors_only` `total` around 25, `error` values such as `challenge` (MFA challenges) and failed logins; the username filter narrows to that user. |
 | `get_license_info` | "What license does the server have?" | 943: `subscription`, `state: SUBSCRIPTION_OK`, `max_cc: 10`, `cc_limit: 10`, `name: Subscription 1`; 944: `unlicensed`, `current_cc: 0`, `max_cc: 2`. |
@@ -85,7 +89,7 @@ logs grow with every API login. `list_access_rules` replaces the original plan's
 ## Connecting a VPN client to the stand
 
 Compose publishes only the web port, so the client runs as a container on the stand network.
-For a user named `qa vpn test user` on 3.2.3 (use `as-3-1-0` for 3.1.0):
+For a user named `qa vpn test user` on 3.2.4 (use `as-3-1-0` for 3.1.0):
 
     docker exec as-latest sacli --user "qa vpn test user" --key type --value user_connect UserPropPut
     docker exec as-latest sacli --user "qa vpn test user" --key prop_autologin --value true UserPropPut

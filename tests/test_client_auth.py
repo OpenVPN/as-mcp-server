@@ -52,7 +52,7 @@ async def test_first_call_logs_in_with_request_admin_and_sends_the_token_header(
     )
     client = AccessServerClient(make_config(), transport=router.transport())
     result = await client.get("/server/info")
-    assert result["version"] == "3.2.3"
+    assert result["version"] == "3.2.4"
     login, call = router.requests
     assert body_of(login) == {
         "request_admin": True,
@@ -84,7 +84,7 @@ async def test_a_401_is_renewed_and_the_call_is_retried_once_with_the_new_token(
         }
     )
     client = AccessServerClient(make_config(), transport=router.transport())
-    assert (await client.get("/server/info"))["version"] == "3.2.3"
+    assert (await client.get("/server/info"))["version"] == "3.2.4"
     methods = [(r.method, r.url.path) for r in router.requests]
     assert methods == [LOGIN, SERVER_INFO, RENEW, SERVER_INFO]
     assert router.requests[2].headers["X-OpenVPN-As-AuthToken"] == "SESS_TOKEN_test"
@@ -281,7 +281,7 @@ async def test_aclose_is_safe_before_and_after_use() -> None:
     )
     client = AccessServerClient(make_config(), transport=router.transport())
     await client.aclose()
-    assert (await client.get("/server/info"))["version"] == "3.2.3"
+    assert (await client.get("/server/info"))["version"] == "3.2.4"
     await client.aclose()
     assert client.session_state()["keep_alive"] is False
 

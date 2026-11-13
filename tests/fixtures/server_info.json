@@ -1,16 +1,16 @@
 {
  "status": 200,
- "note": "AS 3.2.3",
+ "note": "AS 3.2.4",
  "body": {
-  "version": "3.2.3",
-  "build": "8444f22d",
-  "web_version": "69ba2c40",
+  "version": "3.2.4",
+  "build": "f3c295a7",
+  "web_version": "8c2d9da9",
   "web_override": false,
   "client_version": 35,
   "os_distribution": "Ubuntu 26.04.1 LTS",
   "architecture": "aarch64",
   "cores": 10,
   "system_cores": 10,
-  "os_hostname": "26b4fdda17d2"
+  "os_hostname": "b2a2a218e705"
  }
 }

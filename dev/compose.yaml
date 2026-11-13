@@ -2,7 +2,9 @@
 # Only the Admin UI / Web API port (943) is published; VPN ports are not needed for API tests.
 services:
   as-latest:
-    image: openvpn/openvpn-as:3.2.3-8444f22d-Ubuntu26
+    # Built locally from the official packages: 3.2.4 has no Docker Hub image yet.
+    build: ./as-latest
+    image: as-mcp-dev/openvpn-as:3.2.4-f3c295a7-Ubuntu26
     container_name: as-latest
     devices:
       - /dev/net/tun:/dev/net/tun
