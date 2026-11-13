@@ -3,6 +3,8 @@ leaves the stand as it found it."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import shutil
 import stat
@@ -17,8 +19,14 @@ from fastmcp.exceptions import ToolError
 
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
-from as_mcp_server.texts import MSG_AUTO_LIMIT, MSG_CANCELLED, MSG_NO_ELICITATION
+from as_mcp_server.texts import (
+    MSG_AUTO_LIMIT,
+    MSG_CANCELLED,
+    MSG_LOCKOUT,
+    MSG_NO_ELICITATION,
+)
 from tests.conftest import call_tool
+from tests.live.vpn_clients import VpnClient, for_the_stand, require_client_image
 
 SCRATCH = "live-write-user"
 
@@ -332,3 +340,174 @@ async def test_a_download_link_really_hands_out_a_profile_once_per_use(live) -> 
     assert statuses[:2] == [(200, True), (200, True)]
     assert statuses[2][1] is False
     assert len(await live.profiles(SCRATCH)) == 2
+
+
+# --- sessions: real VPN clients ---------------------------------------------------
+
+
+class Connected:
+    """The throwaway user with a profile made by the tool, and clients using it."""
+
+    def __init__(self, live: Live, profile: Path) -> None:
+        self.live = live
+        self.profile = profile
+        self.clients: list[VpnClient] = []
+
+    async def sessions(self) -> list[dict]:
+        status = await self.live.call("get_active_vpn_connections")
+        return [s for s in status["vpn_clients"] if s["username"] == SCRATCH]
+
+    async def connect(self, expected: int = 1) -> VpnClient:
+        """Start one more client and wait until the server lists `expected`
+        sessions (the status needs about six seconds to show a new one)."""
+        name = f"live-vpn-{self.live.name}-{len(self.clients)}"
+        client = VpnClient(name, self.profile).start()
+        self.clients.append(client)
+        assert client.wait_connected(), client.log()[-600:]
+        for _ in range(40):
+            if len(await self.sessions()) >= expected:
+                return client
+            await asyncio.sleep(0.5)
+        raise AssertionError("the session never appeared in /vpn/status")
+
+    async def stop(self) -> None:
+        """Stop the clients and leave no session behind: the stand allows two."""
+        for client in self.clients:
+            client.stop()
+        for attempt in range(40):
+            if not await self.sessions():
+                return
+            if attempt == 20:  # a session the server did not notice ending
+                with contextlib.suppress(ToolError):
+                    await call_tool(
+                        self.live.auto,
+                        "disconnect_vpn_sessions",
+                        {"usernames": [SCRATCH]},
+                    )
+            await asyncio.sleep(0.5)
+
+
+@pytest.fixture
+async def connected(live):
+    require_client_image()
+    made = await live.call(
+        "create_connection_profile",
+        {"usernames": [SCRATCH], "profile_type": "autologin"},
+    )
+    profile = for_the_stand(Path(made["items"][0]["path"]), live.name, live.tmp_path)
+    user = Connected(live, profile)
+    try:
+        yield user
+    finally:
+        # The live fixture deletes the user; a block set by a test goes with it.
+        await user.stop()
+
+
+async def test_block_user_blocks_and_disconnects_a_connected_user(connected) -> None:
+    live = connected.live
+    client = await connected.connect()
+    link = await live.call("create_profile_download_link", {"usernames": [SCRATCH]})
+    seen: list[str] = []
+    result = await live.call("block_user", {"usernames": [SCRATCH]}, seen=seen)
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and item["disconnected"] == 1
+    assert item["before"]["deny"] is False and item["after"]["deny"] is True
+    assert "disconnects 1 active session(s)" in seen[0]
+    assert client.wait_exited(), client.log()[-600:]
+    assert await connected.sessions() == []
+    (user,) = (await live.call("list_users", {"usernames": [SCRATCH]}))["profiles"]
+    assert user["deny"]["value"] is True
+
+    again = VpnClient(f"{client.name}-again", connected.profile).start()
+    connected.clients.append(again)
+    assert again.wait_exited(30)
+    assert "AUTH_FAILED,DENY" in again.log()
+
+    # What the tool says about download links, checked on the real server.
+    url = Path(link["items"][0]["path"]).read_text("utf-8").splitlines()[0]
+    path = "/rest/" + url.rsplit("/rest/", 1)[1]
+    async with httpx.AsyncClient(verify=False, base_url=live.settings.url) as http:
+        answer = await http.get(path)
+    assert answer.status_code == 200 and "<key>" in answer.text
+
+
+async def test_disconnect_by_username_ends_every_session_and_does_not_block(
+    connected,
+) -> None:
+    live = connected.live
+    first = await connected.connect(1)
+    second = await connected.connect(2)
+    seen: list[str] = []
+    result = await live.call(
+        "disconnect_vpn_sessions",
+        {"usernames": [SCRATCH], "reason": "live test"},
+        mode="2026-07-28",
+        seen=seen,
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and item["disconnected"] == 2
+    assert "active sessions: 2 -> 0" in seen[0]
+    assert first.wait_exited() and second.wait_exited()
+    assert await connected.sessions() == []
+    (user,) = (await live.call("list_users", {"usernames": [SCRATCH]}))["profiles"]
+    assert user["deny"]["value"] is False
+    back = await connected.connect(1)  # not blocked: the same profile connects again
+    assert back.running()
+    with pytest.raises(ToolError, match="has no active VPN session"):
+        await live.call("disconnect_vpn_sessions", {"usernames": [SCRATCH, "alice"]})
+    assert back.running() and len(await connected.sessions()) == 1
+
+
+async def test_disconnect_by_session_ends_one_of_two_sessions(connected) -> None:
+    live = connected.live
+    await connected.connect(1)
+    await connected.connect(2)
+    one, other = sorted(
+        await connected.sessions(), key=lambda s: (s["daemon_id"], s["client_id"])
+    )
+    target = {"daemon_id": one["daemon_id"], "client_id": one["client_id"]}
+    result = await call_tool(
+        live.auto, "disconnect_vpn_sessions", {"sessions": [target]}
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and result["approval"] == "auto"
+    assert item["target"] == f"session {one['daemon_id']}/{one['client_id']}"
+    left = await connected.sessions()
+    assert [(s["daemon_id"], s["client_id"]) for s in left] == [
+        (other["daemon_id"], other["client_id"])
+    ]
+    assert sorted(client.running() for client in connected.clients) == [False, True]
+    # The same session again: it is gone now.
+    with pytest.raises(ToolError, match="There is no VPN session"):
+        await call_tool(live.auto, "disconnect_vpn_sessions", {"sessions": [target]})
+
+
+async def test_a_declined_block_leaves_the_user_connected(connected) -> None:
+    live = connected.live
+    client = await connected.connect()
+    for tool in ("block_user", "disconnect_vpn_sessions"):
+        with pytest.raises(ToolError) as refused:
+            await live.call(tool, {"usernames": [SCRATCH]}, answer="decline")
+        assert str(refused.value) == MSG_CANCELLED
+    assert client.running() and len(await connected.sessions()) == 1
+    (user,) = (await live.call("list_users", {"usernames": [SCRATCH]}))["profiles"]
+    assert user["deny"]["value"] is False
+
+
+async def test_block_user_without_a_session_and_its_refusals(live) -> None:
+    result = await live.call("block_user", {"usernames": [SCRATCH]})
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and item["disconnected"] == 0
+    (user,) = (await live.call("list_users", {"usernames": [SCRATCH]}))["profiles"]
+    assert user["deny"]["value"] is True
+
+    own = live.settings.user
+    for mcp in (live.mcp, live.auto):
+        with pytest.raises(ToolError) as refused:
+            await call_tool(mcp, "block_user", {"usernames": ["alice", own]})
+        assert str(refused.value) == MSG_LOCKOUT.format(name=own)
+    for name in ("staff", "no-such-user", "__DEFAULT__"):
+        with pytest.raises(ToolError):
+            await call_tool(live.auto, "block_user", {"usernames": ["alice", name]})
+    users = (await live.call("list_users", {"usernames": ["alice", own]}))["profiles"]
+    assert [user["deny"]["value"] for user in users] == [False, False]

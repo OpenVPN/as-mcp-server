@@ -37,6 +37,10 @@ EXPECTED_HINTS = {
     ("create_profile_download_link", "usages"): ["at most 5"],
     ("delete_connection_profiles", "serials"): ["string", "not a", "100"],
     ("delete_connection_profiles", "username"): ["case-sensitive", "every profile"],
+    ("block_user", "usernames"): ["case-sensitive", "not a group"],
+    ("disconnect_vpn_sessions", "usernames"): ["case-sensitive", "every running"],
+    ("disconnect_vpn_sessions", "sessions"): ["daemon_id", "client_id"],
+    ("disconnect_vpn_sessions", "reason"): ["log", "does not see"],
 }
 
 

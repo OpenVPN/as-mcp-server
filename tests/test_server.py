@@ -445,3 +445,19 @@ async def test_the_default_mode_keeps_the_read_only_instructions(
     async with Client(mcp, mode="legacy") as client:
         assert client.initialize_result.instructions == INSTRUCTIONS
     assert INSTRUCTIONS.startswith("Read-only access to one OpenVPN Access Server")
+
+
+async def test_write_mode_adds_exactly_the_write_tools_built_so_far(
+    tmp_path: Path,
+) -> None:
+    mcp, _ = server_for(tmp_path, {}, write_tools=True)
+    async with Client(mcp) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert names - EXPECTED_TOOLS == {
+        "create_connection_profile",
+        "create_profile_download_link",
+        "delete_connection_profiles",
+        "block_user",
+        "disconnect_vpn_sessions",
+    }
+    assert names >= EXPECTED_TOOLS

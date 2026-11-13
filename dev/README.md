@@ -108,6 +108,34 @@ For a user named `qa vpn test user` on 3.2.4 (use `as-3-1-0` for 3.1.0):
 holds a client key: keep it in `dev/.local/`. Clean up with `docker rm -f vpn-client` and
 `docker exec as-latest sacli --user "qa vpn test user" UserPropDelAll`.
 
+The live tests of `block_user` and `disconnect_vpn_sessions` start such clients themselves,
+from the image `as-mcp-dev/vpn-client:1` (`dev/vpn-client/Dockerfile`; built on first use),
+with a profile made by `create_connection_profile`. The stand allows two VPN connections at
+a time (3.1.0 is unlicensed, 3.2.4 runs a trial), so stop a client with `docker stop`, not
+`docker kill`: a killed client stays in `/vpn/status` and keeps its slot until the server
+times it out.
+
+### What Access Server does with sessions (measured with real clients)
+
+Measured on 3.1.0 and 3.2.4 on 2026-11-13 (first on 3.2.2 on 2026-11-11):
+
+- A connected session survives `deny=true`: it was still online 30 seconds later. A new
+  connection is refused at once with `AUTH_FAILED,DENY: User access denied`.
+- A connected session also survives the deletion of its profile; a new connection with that
+  profile is refused with `AUTH_FAILED,REVOKED: client certificate has been revoked`.
+- `POST /vpn/client/disconnect` answers 200 with the body `null`; the client exits and
+  does not reconnect by itself. `users: [name]` ends every session of that user. The name is
+  case-sensitive, as is the VPN login itself.
+- The same call for a target without a session answers `404 "Some of the clients are
+  missing"`. With two users of whom one has no session the answer is also 404, and the
+  session of the other one is disconnected anyway.
+- `/vpn/status` shows a new session after about 6 seconds and keeps an ended one for about
+  5 seconds. A disconnect sent while an ended session is still listed answers 404.
+- A client that was killed without a goodbye stays in `/vpn/status` for more than 20
+  seconds; disconnecting it answers 200 and removes it.
+- Blocking a user does not stop an unused download link of that user: the link still
+  returns a profile, and the profile cannot connect while the user is blocked.
+
 ## Rebuilding the fixtures (no Admin UI needed)
 
 The live tests expect, on each server: group `staff`; user `alice` (`user_connect`) and the

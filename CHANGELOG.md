@@ -20,6 +20,12 @@ All notable changes to this project are documented here. The format follows
   mode anything `autologin` is refused. A name that is not an existing user is refused
   (Access Server itself would issue a profile to a group name or an unknown name).
   Download links are limited to 7 days and 5 uses (`autologin`: 24 hours and 5 uses).
+- Write tools `block_user` and `disconnect_vpn_sessions`. `block_user` sets `deny` and
+  then disconnects the user's running sessions, because Access Server does not end a
+  running session when a user is blocked; it reports a session that is still connected.
+  `disconnect_vpn_sessions` takes usernames or single sessions and does not block. The
+  text shown to the VPN user is fixed. The account the server signs in with cannot be
+  blocked.
 
 ### Changed
 - An Access Server version that cannot be read is treated as below the supported
