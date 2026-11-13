@@ -98,7 +98,11 @@ class WriteDeps:
         )
         name = client.config.username
         by_name = {record["name"].casefold(): record for record in users}
-        record = by_name.get(name.casefold())
+        # The exact spelling first: `openvpn` and `OpenVPN` can be two users.
+        record = next(
+            (user for user in users if user["name"] == name),
+            by_name.get(name.casefold()),
+        )
         if record is None:
             raise ToolError(MSG_NO_OWN_RECORD.format(name=clean(name)))
         group = record.get("group")

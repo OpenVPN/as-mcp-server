@@ -798,3 +798,17 @@ async def test_read_user_and_read_group_find_exact_names_only(tmp_path: Path) ->
         await read_group(client, "__DEFAULT__")
     with pytest.raises(ToolError, match="no user named a b on this"):
         await read_user(client, "a\nb")
+
+
+async def test_the_own_record_is_the_exact_name_when_names_differ_only_in_case(
+    tmp_path: Path,
+) -> None:
+    users = [
+        record("openvpn", **ADMIN),
+        record("OpenVPN", group="staff"),
+        record("OPENVPN"),
+    ]
+    stand = Stand(tmp_path, users=users, groups=[record("staff")])
+    own = await stand.deps.own()
+    assert own.name == "openvpn" and own.group is None
+    assert own.user["admin"]["value"] is True
