@@ -61,6 +61,7 @@ on purpose: tests assert that the server redacts them.
 | `mfaauth_replayed_code.json` | 403 | 3.2.2: same TOTP code used twice within one 30 s window |
 | `mfaauth_replayed_code_3_1_0.json` | 403 | 3.1.0: same TOTP code used twice within one 30 s window |
 | `server_info.json` | 200 | AS 3.2.4 (f3c295a7), captured 2026-11-13 after the stand moved from 3.2.3 |
+| `profile_create_201.txt` | 201 | 3.2.4: the answer of `/profiles/create` (an .ovpn file) for a `userlogin` profile, captured 2026-11-13; the private key, the TLS-Crypt key and every certificate are replaced by `TESTKEY`, `TESTSTATICKEY`, `TESTCERT`, the host by `as.example` |
 | `profiles_list.json` | 200 | 3.2.4: all 7 connection profiles ordered by serial (alice 1, bob 4, жанна 1, one autologin); serials arrive as strings (captured 2026-11-13) |
 | `profiles_list_3_1_0.json` | 200 | the same on 3.1.0 |
 | `server_info_3_1_0.json` | 200 | AS 3.1.0 |
@@ -70,6 +71,7 @@ on purpose: tests assert that the server redacts them.
 | `status_overview_secrets.json` | 200 | secret-bearing config keys (LDAP bind password, RADIUS secret, subscription bundle); shape captured 2026-09-16, values replaced |
 | `status_overview_versioned_secret.json` | 200 | `acme.eab_hmac_key.2.9.0`, a secret-shaped key with a version suffix, planted with `sacli ConfigPut`; captured 2026-09-22, value replaced |
 | `token_renew_ok.json` | 200 |  |
+| `token_url_ok.json` | 200 | the shape of a `/token-url` answer on 3.1.0 and 3.2.4 (`openvpn://import-profile/https://<host>/rest/GetProfileViaToken?token=<32 characters>`), token replaced |
 | `users_list.json` | 200 | all users (openvpn, mfa-admin, alice) |
 | `users_list_by_names.json` | 200 | explicit usernames; missing one is silently absent |
 | `users_list_filter_admin.json` | 200 | admin filter |

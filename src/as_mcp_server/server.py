@@ -17,6 +17,7 @@ from as_mcp_server.config import DEFAULT_PROFILE, INSECURE_WARNING
 from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.settings import Settings
 from as_mcp_server.tools import register_tools
+from as_mcp_server.tools_profiles import register_profile_tools
 from as_mcp_server.writes import WriteDeps
 
 log = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ def register_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     It lives here, not in writes.py, so the tools modules can import writes without
     a cycle.
     """
+    register_profile_tools(mcp, deps)
 
 
 def build(

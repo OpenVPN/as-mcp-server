@@ -30,11 +30,21 @@ EXPECTED_HINTS = {
     ("list_connection_profiles", "autologin_only"): ["without a password"],
     ("list_access_lists", "usernames"): ["absent"],
     ("list_access_lists", "group_names"): ["absent"],
+    ("create_connection_profile", "usernames"): ["case-sensitive", "not a group"],
+    ("create_connection_profile", "profile_type"): ["without a password"],
+    ("create_connection_profile", "comment"): ["200"],
+    ("create_profile_download_link", "lifetime_seconds"): ["86400", "604800"],
+    ("create_profile_download_link", "usages"): ["at most 5"],
+    ("delete_connection_profiles", "serials"): ["string", "not a", "100"],
+    ("delete_connection_profiles", "username"): ["case-sensitive", "every profile"],
 }
 
 
 async def schemas() -> dict[str, dict]:
-    mcp = build(Settings(url="https://as.example:943", user="u", password="p"))
+    """Every tool of write mode, which holds the read-mode tools too."""
+    mcp = build(
+        Settings(url="https://as.example:943", user="u", password="p", write_tools=True)
+    )
     async with Client(mcp) as client:
         return {tool.name: tool.input_schema for tool in await client.list_tools()}
 
@@ -67,3 +77,20 @@ async def test_bounds_and_enums_survive_the_annotations() -> None:
     rule_type = all_schemas["list_access_rules"]["properties"]["rule_type"]
     assert "domain_routing" in json.dumps(rule_type)
     assert all_schemas["list_access_rules"]["required"] == ["ruleset_ids"]
+
+
+async def test_the_profile_write_tools_state_their_bounds_in_the_schema() -> None:
+    all_schemas = await schemas()
+    create = all_schemas["create_connection_profile"]
+    assert create["required"] == ["usernames"]
+    assert create["properties"]["profile_type"]["enum"] == ["userlogin", "autologin"]
+    assert "200" in json.dumps(create["properties"]["comment"])
+    link = all_schemas["create_profile_download_link"]["properties"]
+    assert link["lifetime_seconds"]["minimum"] == 60
+    assert link["lifetime_seconds"]["default"] == 86400
+    assert link["usages"]["minimum"] == 1 and link["usages"]["default"] == 1
+    delete = all_schemas["delete_connection_profiles"]
+    assert "required" not in delete or delete["required"] == []
+    assert set(delete["properties"]) == {"serials", "username"}
+    for schema in all_schemas.values():
+        assert "ctx" not in schema.get("properties", {})

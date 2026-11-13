@@ -152,6 +152,11 @@ Never open the Admin UI on a stand: the first visit accepts the EULA, and from t
 sees `eula_accepted: true`; `docker exec <stand> sacli --key aui.eula_version ConfigDel`
 restores the pristine state.
 
+The write-tool live tests (`tests/live/test_writes_live.py`) create the user
+`live-write-user` with `sacli`, issue and delete connection profiles for it through the
+tools, and remove the user again; every test checks that the number of profiles on the
+server is the same afterwards. They need `docker` on the path.
+
 `make live` also writes two secret-shaped keys to each stand (`auth.ldap.0.bind_pw` and the
 version-suffixed `acme.eab_hmac_key.2.9.0`, both with a `LIVE_..._marker` value) through
 `docker exec <stand> sacli ConfigPut`, checks that `get_status_overview` masks them, and deletes

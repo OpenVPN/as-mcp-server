@@ -11,7 +11,15 @@ All notable changes to this project are documented here. The format follows
   (IPv4 access lists of users and groups, with a note that the global IP/subnet rules
   and IPv6 access lists are not visible through the API). The thirteen tools of 0.1.0 are unchanged.
 - Settings `OPENVPN_AS_WRITE_TOOLS`, `OPENVPN_AS_APPROVAL` and `OPENVPN_AS_OUTPUT_DIR`,
-  shown by `connection_info` and `as-mcp-server check`. No write tool exists yet.
+  shown by `connection_info` and `as-mcp-server check`.
+- With `OPENVPN_AS_WRITE_TOOLS=true`, three write tools for connection profiles:
+  `create_connection_profile`, `create_profile_download_link` and
+  `delete_connection_profiles`. A profile or a link is saved to a file in the output
+  folder (readable by its owner only) and the tool returns the path, never the content.
+  Every call is shown to the administrator for approval first; in automatic approval
+  mode anything `autologin` is refused. A name that is not an existing user is refused
+  (Access Server itself would issue a profile to a group name or an unknown name).
+  Download links are limited to 7 days and 5 uses (`autologin`: 24 hours and 5 uses).
 
 ### Changed
 - An Access Server version that cannot be read is treated as below the supported

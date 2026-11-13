@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "openvpn://import-profile/https://as.example/rest/GetProfileViaToken?token=TESTLINKTOKEN"
+}
