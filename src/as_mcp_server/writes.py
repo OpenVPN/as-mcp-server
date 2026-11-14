@@ -218,6 +218,22 @@ async def read_group(
     return await _read_record(client, name, "group", members=members)
 
 
+async def find_record(
+    client: AccessServerClient, name: str, kind: str, *, members: bool = False
+) -> dict[str, Any] | None:
+    """The record of the user or group (`kind`) called exactly `name`, or None."""
+    return await _lookup(client, name, kind, members=members)
+
+
+async def kind_of(client: AccessServerClient, name: str) -> str | None:
+    """ "user" or "group" when a record with exactly this name exists, else None.
+    Access Server keeps both kinds in one namespace (measured)."""
+    for kind in ("user", "group"):
+        if await _lookup(client, name, kind) is not None:
+            return kind
+    return None
+
+
 _ENDPOINTS = {
     "user": ("/users/list", "users"),
     "group": ("/groups/list", "groups"),

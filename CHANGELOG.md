@@ -30,6 +30,21 @@ All notable changes to this project are documented here. The format follows
   the Access Server support report to a file in the output folder and returns the path
   and the size, never the text. It changes nothing on the server and asks no approval;
   the request may take up to 5 minutes.
+- Write tools for users: `create_user` (a list; an optional generated password goes to a
+  file, a password is never a parameter), `update_user` (one change for a list of users,
+  a move to another group, `reset_to_inherited`; `deny=true` is refused in favour of
+  `block_user`) and `delete_user` (profiles, the user, then the user's running sessions,
+  which Access Server would leave connected).
+- Write tools for groups: `create_group`, `update_group` and `delete_group`. Access
+  Server refuses the VPN connections of the members of a new group until it is
+  restarted; `create_group` says so before and after the change.
+- The account the server signs in with cannot be deleted, blocked, demoted or moved, also
+  not through its group. In automatic approval mode nobody becomes an administrator, MFA
+  is not switched off, the authentication method is not changed and autologin is not
+  switched on.
+- A change that blocks a user without disconnecting them (a move into a blocked group, a
+  reset of `deny`, a block set on a group) names the connected users in the preview and
+  in `warnings`.
 
 ### Changed
 - An Access Server version that cannot be read is treated as below the supported

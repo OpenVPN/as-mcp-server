@@ -63,9 +63,11 @@ class _Unknown:
 UNKNOWN: Final = _Unknown()
 
 
-def snapshot(record: Mapping[str, Any]) -> dict[str, Any]:
-    """`{field: effective value}` for GUARDED, plus `group` (None without one)."""
-    result = {field: _prop(record, field)["value"] for field in GUARDED}
+def snapshot(
+    record: Mapping[str, Any], *, fields: Sequence[str] = GUARDED
+) -> dict[str, Any]:
+    """`{field: effective value}` for `fields`, plus `group` (None without one)."""
+    result = {field: _prop(record, field)["value"] for field in fields}
     result["group"] = _group_of(record)
     return result
 
@@ -108,6 +110,8 @@ def user_after(
     reset: Sequence[str],
     group: Mapping[str, Any] | None,
     base: Mapping[str, Any],
+    *,
+    fields: Sequence[str] = GUARDED,
 ) -> dict[str, Any]:
     """The snapshot of a user after `changes` and `reset`; `user` None is a new user.
 
@@ -118,7 +122,7 @@ def user_after(
     group_name = changes.get("group") or (_group_of(user) if user else None)
     if group_name is not None and group is None:
         raise CannotCompute(f"the state of group {group_name!r} is not known")
-    result = _after(user, changes, reset, group if group_name else None, base)
+    result = _after(user, changes, reset, group if group_name else None, base, fields)
     result["group"] = group_name
     return result
 
@@ -128,9 +132,11 @@ def group_after(
     changes: Mapping[str, Any],
     reset: Sequence[str],
     base: Mapping[str, Any],
+    *,
+    fields: Sequence[str] = GUARDED,
 ) -> dict[str, Any]:
     """The snapshot of a group after `changes` and `reset`; None is a new group."""
-    result = _after(group, changes, reset, None, base)
+    result = _after(group, changes, reset, None, base, fields)
     result["group"] = None
     return result
 
@@ -141,9 +147,10 @@ def _after(
     reset: Sequence[str],
     group: Mapping[str, Any] | None,
     base: Mapping[str, Any],
+    fields: Sequence[str] = GUARDED,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for field in GUARDED:
+    for field in fields:
         if changes.get(field) is not None:
             result[field] = changes[field]
             continue

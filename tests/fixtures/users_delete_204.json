@@ -1,0 +1,5 @@
+{
+  "status": 204,
+  "note": "3.2.4: POST /users/delete {\"users\": [\"fixture-user\"]}; no body (captured 2026-11-14)",
+  "body": null
+}

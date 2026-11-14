@@ -50,16 +50,26 @@ def for_the_stand(profile: Path, stand: str, directory: Path) -> Path:
 
 
 class VpnClient:
-    def __init__(self, name: str, profile: Path) -> None:
+    def __init__(self, name: str, profile: Path, auth: Path | None = None) -> None:
+        """`auth` is a file with the username and the password on two lines, for a
+        profile that asks for them (userlogin)."""
         self.name = name
         self.profile = profile
+        self.auth = auth
 
     def start(self) -> VpnClient:
         self.stop()
+        mounts = ["-v", f"{self.profile}:/client.ovpn:ro"]
+        options: list[str] = []
+        if self.auth is not None:
+            mounts += ["-v", f"{self.auth}:/auth.txt:ro"]
+            options = ["--auth-user-pass", "/auth.txt", "--auth-retry", "none"]
         docker(
             *("run", "-d", "--name", self.name, "--network", NETWORK),
             *("--cap-add", "NET_ADMIN", "--device", "/dev/net/tun"),
-            *("-v", f"{self.profile}:/client.ovpn:ro", IMAGE),
+            *mounts,
+            IMAGE,
+            *options,
             check=True,
         )
         return self

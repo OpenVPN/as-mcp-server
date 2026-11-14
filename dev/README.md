@@ -136,6 +136,40 @@ Measured on 3.1.0 and 3.2.4 on 2026-11-13 (first on 3.2.2 on 2026-11-11):
 - Blocking a user does not stop an unused download link of that user: the link still
   returns a profile, and the profile cannot connect while the user is blocked.
 
+### What Access Server does with users and groups (measured)
+
+Measured on 3.1.0 and 3.2.4 on 2026-11-14, with the API and with real VPN clients:
+
+- Users and groups share one namespace: `/users/create` and `/groups/create` answer 400
+  "Object already exists" for the name of either kind. Names are case-sensitive, so
+  `alice` and `Alice` are two users. A name may hold spaces, `/`, `@` and non-Latin
+  letters; a line break is refused. An empty name is a 400 on 3.2.4 and a 500 on 3.1.0.
+- The `group` of a user is stored as given: the name of a group that does not exist, or
+  the name of a user, is accepted by `/users/create` and by `/userprop/set`. `null` takes
+  the user out of the group; an empty text is stored as an empty text.
+- `/userprop/set` answers 400 for a name without a record. `/auth/password/change`
+  creates a user record for such a name.
+- A password must hold a digit, an upper-case letter and a symbol and be at least 8
+  characters long; it can be set only for a user whose authentication method is `local`
+  (403 otherwise). A user that signs in with a password set through the API connects to
+  the VPN with it.
+- `/users/delete` does not delete the user's profiles and does not end the user's VPN
+  session: the session was still listed 12 seconds later, and `/vpn/client/disconnect`
+  with the name ended it. A missing user is a 404, and so is a list with one missing name
+  (nobody is deleted).
+- **A group that did not exist when Access Server last started refuses the VPN
+  connections of its members** (`AUTH_FAILED`; server log: "group assignment failed:
+  referenced group ... either does not exist or does not define group_subnets"), also
+  150 seconds later. After a warm restart the members connect. A group deleted and
+  created again under the same name works without a restart. `create_group` says so in
+  its preview and in its result; a live test fails when a newer server changes this.
+- `/groups/delete` leaves the members as users without a group and does not end their
+  sessions. A group with `deny=true` refuses new connections of the members that inherit
+  it at once and leaves their running sessions connected; so does moving a connected
+  user into such a group.
+- An explicit `false` in `/users/create` is stored as the user's own value, so the tool
+  sends `admin` and `deny` only when they are true.
+
 ## Rebuilding the fixtures (no Admin UI needed)
 
 The live tests expect, on each server: group `staff`; user `alice` (`user_connect`) and the

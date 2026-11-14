@@ -19,6 +19,7 @@ from as_mcp_server.settings import Settings
 from as_mcp_server.tools import register_tools
 from as_mcp_server.tools_profiles import register_profile_tools
 from as_mcp_server.tools_sessions import register_session_tools
+from as_mcp_server.tools_users import register_user_tools
 from as_mcp_server.writes import WriteDeps
 
 log = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ def register_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     """
     register_profile_tools(mcp, deps)
     register_session_tools(mcp, deps)
+    register_user_tools(mcp, deps)
 
 
 def build(

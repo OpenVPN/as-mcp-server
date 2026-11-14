@@ -1,0 +1,7 @@
+{
+  "status": 404,
+  "note": "3.2.4: the same request again: the user is gone (captured 2026-11-14)",
+  "body": {
+    "reason": "ConfigDB: profile 'fixture-user' not found"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "status": 400,
+  "note": "3.2.4: the same request again (captured 2026-11-14)",
+  "body": {
+    "reason": "Object already exists",
+    "detail": {
+      "name": "'fixture-group' is a name of an already existing group"
+    }
+  }
+}

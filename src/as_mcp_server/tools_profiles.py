@@ -120,6 +120,9 @@ async def _serials(client: AccessServerClient, username: str) -> list[str]:
     return sorted(serials, key=_by_number)
 
 
+serials_of = _serials
+
+
 def _autologin_allowed(user: dict[str, Any]) -> Any:
     prop = user.get("autologin")
     return prop.get("value") if isinstance(prop, dict) else None

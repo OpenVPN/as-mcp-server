@@ -24,22 +24,29 @@ on purpose: tests assert that the server redacts them.
 | `error_bad_owner_400.json` | 400 | documented DEFAULT is rejected |
 | `error_bad_ruleset_400.json` | 400 |  |
 | `error_forbidden_403.json` | 403 | admin endpoint with a non-admin token |
+| `error_group_exists_400.json` | 400 | 3.2.4: the same request again (captured 2026-11-14) |
 | `error_invalid_token_401.json` | 401 | any authenticated endpoint |
 | `error_missing_header_400.json` | 400 | no X-OpenVPN-As-AuthToken header |
 | `error_not_found_404.json` | 404 | endpoint absent on AS 3.1-3.2.2 |
+| `error_password_not_local_403.json` | 403 | 3.2.4: the user's authentication method is pam (captured 2026-11-14) |
+| `error_password_policy_403.json` | 403 | 3.2.4: a password without a digit, an upper-case letter and a symbol (captured 2026-11-14) |
+| `error_user_exists_400.json` | 400 | 3.2.4: the same request again (captured 2026-11-14) |
+| `error_userprop_missing_user_400.json` | 400 | 3.2.4: POST /userprop/set for a name without a record (captured 2026-11-14) |
+| `error_users_delete_404.json` | 404 | 3.2.4: the same request again: the user is gone (captured 2026-11-14) |
+| `groups_create_201.json` | 201 | 3.2.4: POST /groups/create {"name": "fixture-group"}; the body is empty (captured 2026-11-14) |
+| `groups_delete_204.json` | 204 | 3.2.4: POST /groups/delete {"groups": ["fixture-group"]}; no body (captured 2026-11-14) |
 | `groups_list.json` | 200 | members counted only |
 | `groups_list_members.json` | 200 | members enumerated |
 | `license_info_subscription.json` | 200 | trial subscription active |
 | `license_info_unlicensed.json` | 200 | AS 3.1.0 without a subscription |
 | `log_reports.json` | 200 | latest 5 |
 | `log_reports_anywhere.json` | 200 | anywhere filter |
-| `log_reports_injected.json` | 200 | 3.2.2: failed logins with crafted usernames (log lines, instructions, control and bidi characters) sent without credentials, plus plain failures for alice and bob (captured 2026-09-29) |
 | `log_reports_errors_only.json` | 200 | error is a string filter: not_equal empty string |
 | `log_reports_filter_time.json` | 200 | relative time filter |
 | `log_reports_filter_user.json` | 200 | username filter |
+| `log_reports_injected.json` | 200 | 3.2.2: failed logins with crafted usernames (log lines, instructions, control and bidi characters) sent without credentials, plus plain failures for alice and bob (captured 2026-09-29) |
 | `login_bad_password_403.json` | 403 |  |
 | `login_challenge_radius_401.json` | 401 | 3.2.2: admin bound to a RADIUS back end (dev FreeRADIUS) that answers Access-Challenge; `challenge` is the RADIUS Reply-Message verbatim (captured 2026-09-22) |
-| `login_radius_bad_password_403.json` | 403 | 3.2.2: wrong first-factor password for a RADIUS-bound admin; the RADIUS Reply-Message is passed through as `reason` |
 | `login_lockout_403.json` | 403 | 3.2.2: after repeated authentication failures (captured from curl) |
 | `login_mfa_required_401.json` | 401 | 3.2.2: enrolled TOTP admin, no totp in body; MFAChallenge fields are top-level |
 | `login_mfa_required_401_3_1_0.json` | 401 | 3.1.0: enrolled TOTP admin, no totp in body; MFAChallenge fields are top-level |
@@ -48,6 +55,7 @@ on purpose: tests assert that the server redacts them.
 | `login_mfa_totp_inline_bad_code_500.json` | 500 | 3.2.2: totp passed inline in /auth/login/userpassword -> server error (bug); use /auth/login/mfaauth instead |
 | `login_not_admin.json` | 403 | non-admin user with request_admin=true |
 | `login_ok.json` | 200 | admin login without MFA, AS 3.2.2 |
+| `login_radius_bad_password_403.json` | 403 | 3.2.2: wrong first-factor password for a RADIUS-bound admin; the RADIUS Reply-Message is passed through as `reason` |
 | `login_saml_required_401.json` | 401 | 3.2.2 with `auth.module.type=saml`: password login of an account without a per-user auth type; no `challenge_context` (captured 2026-09-21) |
 | `mfa_enroll_ok.json` | 200 | enrollment with the intermediate 409 token |
 | `mfaauth_bad_code.json` | 403 | 3.2.2: wrong TOTP code |
@@ -60,18 +68,21 @@ on purpose: tests assert that the server redacts them.
 | `mfaauth_radius_ok.json` | 200 | 3.2.2: RADIUS challenge answered with the correct PIN through /auth/login/mfaauth |
 | `mfaauth_replayed_code.json` | 403 | 3.2.2: same TOTP code used twice within one 30 s window |
 | `mfaauth_replayed_code_3_1_0.json` | 403 | 3.1.0: same TOTP code used twice within one 30 s window |
-| `server_info.json` | 200 | AS 3.2.4 (f3c295a7), captured 2026-11-13 after the stand moved from 3.2.3 |
+| `password_change_ok.json` | 200 | 3.2.4: POST /auth/password/change for a local user, by an administrator (captured 2026-11-14) |
 | `profile_create_201.txt` | 201 | 3.2.4: the answer of `/profiles/create` (an .ovpn file) for a `userlogin` profile, captured 2026-11-13; the private key, the TLS-Crypt key and every certificate are replaced by `TESTKEY`, `TESTSTATICKEY`, `TESTCERT`, the host by `as.example` |
 | `profiles_list.json` | 200 | 3.2.4: all 7 connection profiles ordered by serial (alice 1, bob 4, жанна 1, one autologin); serials arrive as strings (captured 2026-11-13) |
 | `profiles_list_3_1_0.json` | 200 | the same on 3.1.0 |
+| `server_info.json` | 200 | AS 3.2.4 (f3c295a7), captured 2026-11-13 after the stand moved from 3.2.3 |
 | `server_info_3_1_0.json` | 200 | AS 3.1.0 |
 | `server_status.json` | 200 |  |
 | `status_overview.json` | 200 | empty names |
-| `status_overview_with_names.json` | 200 | two config keys requested |
 | `status_overview_secrets.json` | 200 | secret-bearing config keys (LDAP bind password, RADIUS secret, subscription bundle); shape captured 2026-09-16, values replaced |
 | `status_overview_versioned_secret.json` | 200 | `acme.eab_hmac_key.2.9.0`, a secret-shaped key with a version suffix, planted with `sacli ConfigPut`; captured 2026-09-22, value replaced |
+| `status_overview_with_names.json` | 200 | two config keys requested |
 | `token_renew_ok.json` | 200 |  |
 | `token_url_ok.json` | 200 | the shape of a `/token-url` answer on 3.1.0 and 3.2.4 (`openvpn://import-profile/https://<host>/rest/GetProfileViaToken?token=<32 characters>`), token replaced |
+| `users_create_201.json` | 201 | 3.2.4: POST /users/create {"name": "fixture-user"}; the body is empty (captured 2026-11-14) |
+| `users_delete_204.json` | 204 | 3.2.4: POST /users/delete {"users": ["fixture-user"]}; no body (captured 2026-11-14) |
 | `users_list.json` | 200 | all users (openvpn, mfa-admin, alice) |
 | `users_list_by_names.json` | 200 | explicit usernames; missing one is silently absent |
 | `users_list_filter_admin.json` | 200 | admin filter |

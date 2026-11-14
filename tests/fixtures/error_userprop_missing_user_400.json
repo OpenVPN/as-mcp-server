@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "note": "3.2.4: POST /userprop/set for a name without a record (captured 2026-11-14)",
+  "body": {
+    "reason": "Failed to set user properties.User(s) fixture-nobody do not exist"
+  }
+}

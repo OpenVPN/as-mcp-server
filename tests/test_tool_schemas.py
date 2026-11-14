@@ -41,6 +41,20 @@ EXPECTED_HINTS = {
     ("disconnect_vpn_sessions", "usernames"): ["case-sensitive", "every running"],
     ("disconnect_vpn_sessions", "sessions"): ["daemon_id", "client_id"],
     ("disconnect_vpn_sessions", "reason"): ["log", "does not see"],
+    ("create_user", "users"): ["up to 100"],
+    ("update_user", "usernames"): ["case-sensitive", "not a group"],
+    ("update_user", "deny"): ["block_user", "false unblocks"],
+    ("update_user", "group"): ["existing group", "restart"],
+    ("update_user", "admin"): ["automatic approval mode"],
+    ("update_user", "totp"): ["Switching it off", "automatic approval mode"],
+    ("update_user", "reroute_gw"): ["vpn.client.routing.reroute_gw", "dns_only"],
+    ("update_user", "reset_to_inherited"): ["group", "server", "preview"],
+    ("delete_user", "usernames"): ["case-sensitive", "not a group"],
+    ("create_group", "name"): ["128", "existing user or group"],
+    ("create_group", "deny"): ["every member"],
+    ("update_group", "name"): ["case-sensitive", "not a user"],
+    ("update_group", "deny"): ["stay connected"],
+    ("delete_group", "name"): ["case-sensitive"],
 }
 
 

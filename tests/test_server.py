@@ -460,5 +460,11 @@ async def test_write_mode_adds_exactly_the_write_tools_built_so_far(
         "block_user",
         "disconnect_vpn_sessions",
         "create_support_report",
+        "create_user",
+        "update_user",
+        "delete_user",
+        "create_group",
+        "update_group",
+        "delete_group",
     }
     assert names >= EXPECTED_TOOLS
