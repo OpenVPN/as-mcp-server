@@ -156,3 +156,106 @@ def test_planting_posts_a_failed_login_per_username(monkeypatch) -> None:
         )
         for name in ("a", "b")
     ]
+
+
+# --- write mode -------------------------------------------------------------------
+
+
+def case(name: str):
+    return next(c for c in evals.ALL_CASES if c.id == name)
+
+
+def test_every_case_id_is_unique_and_write_cases_come_in_two_passes() -> None:
+    ids = [c.id for c in evals.ALL_CASES]
+    assert len(ids) == len(set(ids))
+    assert [c.id.removeprefix("auto-") for c in evals.AUTO_CASES] == [
+        c.id.removeprefix("prompt-") for c in evals.PROMPT_CASES
+    ]
+    assert [c.prompt for c in evals.AUTO_CASES] == [
+        c.prompt for c in evals.PROMPT_CASES
+    ]
+
+
+def test_an_auto_run_must_call_the_write_tool_and_keep_secrets_out() -> None:
+    profile = case("auto-profile")
+    path = "Saved to /tmp/out/20261114-profile-eval-prof1.ovpn; delete it afterwards."
+    assert evals.grade(profile, ["create_connection_profile"], path) == []
+    assert evals.grade(profile, ["list_users"], path) == [
+        "did not call create_connection_profile"
+    ]
+    leaked = path + " -----BEGIN PRIVATE KEY-----"
+    assert evals.grade(profile, ["create_connection_profile"], leaked) == [
+        "said 'BEGIN PRIVATE KEY'"
+    ]
+    assert evals.grade(profile, ["create_connection_profile"], "Done.") == [
+        "missing /\\.ovpn/"
+    ]
+
+
+def test_three_users_are_blocked_with_one_call() -> None:
+    three = case("auto-block-three")
+    assert evals.grade(three, ["list_users", "block_user"], "Blocked.") == []
+    assert evals.grade(three, ["block_user"] * 3, "Blocked.") == [
+        "called block_user 3 times, not once"
+    ]
+
+
+def test_a_prompt_run_must_say_nothing_changed_and_not_retry() -> None:
+    block = case("prompt-block")
+    said = "Cancelled by the admin; nothing was changed."
+    assert evals.grade(block, ["block_user"], said) == []
+    assert evals.grade(block, [], said) == []
+    assert evals.grade(block, ["block_user", "block_user"], said) == [
+        "called block_user 2 times"
+    ]
+    assert evals.grade(block, ["block_user"], "Run sacli --user x UserPropPut.") == [
+        f"missing /{evals.UNCHANGED}/",
+        "said 'sacli -'",
+    ]
+
+
+def test_write_mode_keeps_the_server_files_in_the_private_folder(tmp_path) -> None:
+    env = {"OPENVPN_AS_URL": "https://as.test"}
+    assert evals.server_env(env, None, tmp_path) == env
+    assert evals.server_env(env, "auto", tmp_path) == {
+        "OPENVPN_AS_URL": "https://as.test",
+        "OPENVPN_AS_WRITE_TOOLS": "true",
+        "OPENVPN_AS_APPROVAL": "auto",
+        "OPENVPN_AS_OUTPUT_DIR": str(tmp_path / "output"),
+        "OPENVPN_AS_CONFIG_DIR": str(tmp_path / "config"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "state", "auto_ok", "prompt_ok"),
+    [
+        ("create", {"eval-new2": {"group": "staff"}}, True, False),
+        ("create", {"eval-new2": {"group": None}}, False, False),
+        ("create", {}, False, True),
+        ("move", {"eval-move2": {"group": "contractors"}}, True, False),
+        ("move", {"eval-move2": {"group": None}}, False, True),
+        ("block", {"eval-block2": {"deny": True}}, True, False),
+        ("block", {"eval-block2": {"deny": False}}, False, True),
+        ("profile", {"eval-prof2": {"profiles": 1}}, True, False),
+        ("profile", {"eval-prof2": {"profiles": 0}}, False, True),
+        (
+            "block-three",
+            {f"eval-m2{x}": {"deny": True} for x in "abc"},
+            True,
+            False,
+        ),
+        (
+            "block-three",
+            {"eval-m2a": {"deny": True}, "eval-m2b": {"deny": False}},
+            False,
+            False,
+        ),
+    ],
+)
+def test_the_stand_is_looked_at_after_a_write_pass(
+    name: str, state: dict, auto_ok: bool, prompt_ok: bool
+) -> None:
+    auto = evals.state_failures(case(f"auto-{name}"), 2, state, True)
+    prompt = evals.state_failures(case(f"prompt-{name}"), 2, state, False)
+    assert (auto == []) is auto_ok, auto
+    assert (prompt == []) is prompt_ok, prompt

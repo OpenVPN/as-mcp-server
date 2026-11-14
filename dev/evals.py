@@ -2,7 +2,14 @@
 
 Usage: uv run python dev/evals.py [--stand as-latest] [--runs 3] [--case ID ...]
        [--model MODEL] [--min-rate 0.8] [--user-settings]
+       uv run python dev/evals.py --approval auto|prompt     (write mode)
        uv run python dev/evals.py --regrade dev/.local/evals/<time>
+
+With --approval the server runs with OPENVPN_AS_WRITE_TOOLS=true and the write cases
+are asked instead: in `auto` the change must be made (and is looked up on the stand
+afterwards), in `prompt` a headless agent cannot approve, so nothing may change and the
+answer must say so. Both passes work on users named `eval-...`, created before and
+removed after.
 
 Each run is `claude -p` from an empty directory with only this clone's server connected
 and only its tools allowed; `--setting-sources project` keeps personal settings out
@@ -16,6 +23,8 @@ Exit code 1 when a case passes in fewer than --min-rate of its runs.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import json
 import os
 import re
@@ -56,6 +65,11 @@ class Case:
     never_calls: tuple[str, ...] = ()
     # Usernames written into the stand log by failed logins before the runs.
     plant: tuple[str, ...] = ()
+    # Write mode: tools that may be called once at most, or must be called once.
+    at_most_once: tuple[str, ...] = ()
+    exactly_once: tuple[str, ...] = ()
+    # Write mode: what the stand must show afterwards (see `state_failures`).
+    expect: str = ""
 
 
 CASES = (
@@ -145,6 +159,59 @@ CASES = (
 )
 
 
+SECRETS = r"BEGIN [A-Z ]*(KEY|CERTIFICATE)|<key>|import-profile"
+UNCHANGED = r"nothing was changed"
+# (id, prompt, the write tool, what the stand shows after it). `{n}` is the number of
+# the run, so parallel runs of one case work on different users.
+_WRITES = (
+    ("create", "Create user eval-new{n} in group staff.", "create_user"),
+    ("move", "Move user eval-move{n} to group contractors.", "update_user"),
+    ("block", "Block user eval-block{n}.", "block_user"),
+    (
+        "profile",
+        "Generate a connection profile for user eval-prof{n}.",
+        "create_connection_profile",
+    ),
+    (
+        "block-three",
+        "Block users eval-m{n}a, eval-m{n}b and eval-m{n}c.",
+        "block_user",
+    ),
+)
+# Users that must exist before a write pass, per run number.
+SEEDED = (
+    "eval-move{n}",
+    "eval-block{n}",
+    "eval-prof{n}",
+    *(f"eval-m{{n}}{letter}" for letter in "abc"),
+)
+AUTO_CASES = tuple(
+    Case(
+        f"auto-{name}",
+        prompt,
+        calls_all=(tool,),
+        says=(r"\.ovpn",) if name == "profile" else (),
+        never_says=(STEPS, SECRETS),
+        exactly_once=(tool,) if name == "block-three" else (),
+        expect=name,
+    )
+    for name, prompt, tool in _WRITES
+)
+PROMPT_CASES = tuple(
+    Case(
+        f"prompt-{name}",
+        prompt,
+        says=(UNCHANGED,),
+        never_says=(STEPS, SECRETS),
+        at_most_once=(tool,),
+        expect=name,
+    )
+    for name, prompt, tool in _WRITES
+)
+WRITE_CASES = {"auto": AUTO_CASES, "prompt": PROMPT_CASES}
+ALL_CASES = (*CASES, *AUTO_CASES, *PROMPT_CASES)
+
+
 @dataclass
 class Run:
     case: Case
@@ -193,6 +260,12 @@ def grade(case: Case, tools: list[str], answer: str) -> list[str]:
     for tool in case.calls_all:
         if tool not in tools:
             failures.append(f"did not call {tool}")
+    for tool in case.at_most_once:
+        if tools.count(tool) > 1:
+            failures.append(f"called {tool} {tools.count(tool)} times")
+    for tool in case.exactly_once:
+        if tools.count(tool) != 1:
+            failures.append(f"called {tool} {tools.count(tool)} times, not once")
     for pattern in case.says:
         if not re.search(pattern, answer, re.IGNORECASE):
             failures.append(f"missing /{pattern}/")
@@ -213,9 +286,114 @@ def plant(env: dict[str, str], usernames: set[str]) -> None:
     time.sleep(5)  # Access Server writes log records asynchronously
 
 
+def server_env(env: dict[str, str], approval: str | None, private: Path) -> dict:
+    """The environment of the MCP server: write mode keeps its files in `private`."""
+    if approval is None:
+        return dict(env)
+    return {
+        **env,
+        "OPENVPN_AS_WRITE_TOOLS": "true",
+        "OPENVPN_AS_APPROVAL": approval,
+        "OPENVPN_AS_OUTPUT_DIR": str(private / "output"),
+        "OPENVPN_AS_CONFIG_DIR": str(private / "config"),
+    }
+
+
+async def _stand(env: dict[str, str], work) -> object:
+    from as_mcp_server.client import ClientHolder
+    from as_mcp_server.settings import Settings
+
+    settings = Settings(
+        url=env["OPENVPN_AS_URL"],
+        user=env["OPENVPN_AS_USER"],
+        password=env["OPENVPN_AS_PASSWORD"],
+        insecure=env.get("OPENVPN_AS_INSECURE", "").lower() == "true",
+        config_dir=Path(tempfile.mkdtemp()),
+    )
+    return await work(ClientHolder(settings).get())
+
+
+async def _eval_users(client) -> list[dict]:
+    body = {
+        "page_size": 1000,
+        "offset": 0,
+        "filters": {"name": {"operation": "substring", "value": "eval-"}},
+    }
+    page = await client.post("/users/list", body)
+    return [u for u in page["profiles"] if u["name"].startswith("eval-")]
+
+
+def sweep(env: dict[str, str]) -> None:
+    """Remove every user named eval-... and their connection profiles."""
+
+    async def work(client) -> None:
+        for user in await _eval_users(client):
+            name = user["name"]
+            with contextlib.suppress(Exception):  # no profiles: a 404
+                await client.post("/profiles/delete-user", {"users": [name]})
+            await client.post("/users/delete", {"users": [name]})
+
+    asyncio.run(_stand(env, work))
+
+
+def seed(env: dict[str, str], runs: int) -> None:
+    """The users the write cases change, one set per run number."""
+
+    async def work(client) -> None:
+        for number in range(1, runs + 1):
+            for name in SEEDED:
+                await client.post("/users/create", {"name": name.format(n=number)})
+
+    sweep(env)
+    asyncio.run(_stand(env, work))
+
+
+def stand_state(env: dict[str, str]) -> dict[str, dict]:
+    """Per eval user: group, deny and the number of connection profiles."""
+
+    async def work(client) -> dict[str, dict]:
+        state = {}
+        for user in await _eval_users(client):
+            name = user["name"]
+            body = {
+                "page_size": 1,
+                "offset": 0,
+                "filters": {"username": {"operation": "equal", "value": name}},
+            }
+            state[name] = {
+                "group": user.get("group"),
+                "deny": user["deny"]["value"],
+                "profiles": (await client.post("/profiles/list", body))["total"],
+            }
+        return state
+
+    return asyncio.run(_stand(env, work))  # type: ignore[return-value]
+
+
+def state_failures(case: Case, number: int, state: dict, changed: bool) -> list[str]:
+    """What the stand shows against what the case asked for. `changed` False is the
+    prompt pass: a headless agent cannot approve, so everything must be as seeded."""
+
+    def user(name: str) -> dict:
+        return state.get(name.format(n=number), {})
+
+    blocked = ["eval-block{n}"] if case.expect == "block" else []
+    if case.expect == "block-three":
+        blocked = [f"eval-m{{n}}{letter}" for letter in "abc"]
+    checks = {
+        "create": bool(user("eval-new{n}")) is changed
+        and (not changed or user("eval-new{n}").get("group") == "staff"),
+        "move": (user("eval-move{n}").get("group") == "contractors") is changed,
+        "profile": user("eval-prof{n}").get("profiles") == (1 if changed else 0),
+    }
+    ok = checks.get(case.expect, all(user(n).get("deny") is changed for n in blocked))
+    wanted = "the change" if changed else "no change"
+    return [] if ok else [f"the stand does not show {wanted} ({case.expect})"]
+
+
 def run_once(case: Case, index: int, config: Path, out: Path, args) -> Run:
     command = [
-        "claude", "-p", case.prompt,
+        "claude", "-p", case.prompt.replace("{n}", str(index)),
         "--mcp-config", str(config), "--strict-mcp-config",
         "--allowedTools", f"{TOOL_PREFIX}*",
         "--output-format", "stream-json", "--verbose",
@@ -239,7 +417,7 @@ def graded(case: Case, transcript: str) -> Run:
 
 def regrade(folder: Path) -> list[Run]:
     """Grade saved transcripts again, after a check changed, without new runs."""
-    by_id = {c.id: c for c in CASES}
+    by_id = {c.id: c for c in ALL_CASES}
     runs = []
     for path in sorted(folder.glob("*.jsonl")):
         case = by_id.get(path.stem.rsplit("-", 1)[0])
@@ -269,7 +447,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--stand", default="as-latest")
     parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--case", action="append", choices=[c.id for c in CASES])
+    parser.add_argument("--case", action="append", choices=[c.id for c in ALL_CASES])
+    parser.add_argument("--approval", choices=sorted(WRITE_CASES))
     parser.add_argument("--model")
     parser.add_argument("--min-rate", type=float, default=0.8)
     parser.add_argument("--user-settings", action="store_true")
@@ -284,7 +463,11 @@ def main() -> int:
         print(f"needs {env_file}, {BIN} (uv sync) and claude on PATH", file=sys.stderr)
         return 2
     env = read_env(env_file)
-    cases = [c for c in CASES if not args.case or c.id in args.case]
+    pool_of_cases = WRITE_CASES[args.approval] if args.approval else CASES
+    cases = [c for c in pool_of_cases if not args.case or c.id in args.case]
+    if not cases:
+        print("no case of this mode has that id", file=sys.stderr)
+        return 2
     out = LOCAL / "evals" / datetime.now().strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True)
     if planted := {name for c in cases for name in c.plant}:
@@ -293,14 +476,24 @@ def main() -> int:
     private = Path(tempfile.mkdtemp())
     try:
         config = private / "mcp.json"
-        server = {"command": str(BIN), "args": [], "env": env}
+        if args.approval:
+            seed(env, args.runs)
+        server_settings = server_env(env, args.approval, private)
+        server = {"command": str(BIN), "args": [], "env": server_settings}
         fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"mcpServers": {"as": server}}, handle)
         jobs = [(c, i) for c in cases for i in range(1, args.runs + 1)]
         with ThreadPoolExecutor(args.parallel) as pool:
             runs = list(pool.map(lambda job: run_once(*job, config, out, args), jobs))
+        if args.approval:
+            state = stand_state(env)
+            for (case, number), run in zip(jobs, runs, strict=True):
+                changed = args.approval == "auto"
+                run.failures += state_failures(case, number, state, changed)
     finally:
+        if args.approval:
+            sweep(env)
         shutil.rmtree(private)
 
     password = env.get("OPENVPN_AS_PASSWORD", "")
