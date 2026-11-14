@@ -5,51 +5,62 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - unreleased
+
+Write mode: an administrator can let the agent change users, groups, connection profiles
+and sessions. It is off by default, and every change is shown for approval first.
+
 ### Added
-- Two read tools: `list_connection_profiles` (who holds which connection profile; never
-  the profile file or its key; serials are strings of digits) and `list_access_lists`
-  (IPv4 access lists of users and groups, with a note that the global IP/subnet rules
-  and IPv6 access lists are not visible through the API). The thirteen tools of 0.1.0 are unchanged.
-- Settings `OPENVPN_AS_WRITE_TOOLS`, `OPENVPN_AS_APPROVAL` and `OPENVPN_AS_OUTPUT_DIR`,
-  shown by `connection_info` and `as-mcp-server check`.
-- With `OPENVPN_AS_WRITE_TOOLS=true`, three write tools for connection profiles:
-  `create_connection_profile`, `create_profile_download_link` and
-  `delete_connection_profiles`. A profile or a link is saved to a file in the output
-  folder (readable by its owner only) and the tool returns the path, never the content.
-  Every call is shown to the administrator for approval first; in automatic approval
-  mode anything `autologin` is refused. A name that is not an existing user is refused
-  (Access Server itself would issue a profile to a group name or an unknown name).
-  Download links are limited to 7 days and 5 uses (`autologin`: 24 hours and 5 uses).
-- Write tools `block_user` and `disconnect_vpn_sessions`. `block_user` sets `deny` and
-  then disconnects the user's running sessions, because Access Server does not end a
-  running session when a user is blocked; it reports a session that is still connected.
-  `disconnect_vpn_sessions` takes usernames or single sessions and does not block. The
-  text shown to the VPN user is fixed. The account the server signs in with cannot be
-  blocked.
-- `create_support_report`, registered only with `OPENVPN_AS_WRITE_TOOLS=true`: saves
-  the Access Server support report to a file in the output folder and returns the path
-  and the size, never the text. It changes nothing on the server and asks no approval;
-  the request may take up to 5 minutes.
-- Write tools for users: `create_user` (a list; an optional generated password goes to a
-  file, a password is never a parameter), `update_user` (one change for a list of users,
-  a move to another group, `reset_to_inherited`; `deny=true` is refused in favour of
-  `block_user`) and `delete_user` (profiles, the user, then the user's running sessions,
-  which Access Server would leave connected).
-- Write tools for groups: `create_group`, `update_group` and `delete_group`. Access
-  Server refuses the VPN connections of the members of a new group until it is
-  restarted; `create_group` says so before and after the change.
-- The account the server signs in with cannot be deleted, blocked, demoted or moved, also
-  not through its group. In automatic approval mode nobody becomes an administrator, MFA
-  is not switched off, the authentication method is not changed and autologin is not
-  switched on.
+- Setting `OPENVPN_AS_WRITE_TOOLS` (default `false`): `true` registers twelve more tools.
+  `OPENVPN_AS_APPROVAL` (`prompt` or `auto`) and `OPENVPN_AS_OUTPUT_DIR`. All three are shown
+  by `connection_info` and `as-mcp-server check`.
+- The approval question: before a change is written the server shows the server, the action,
+  every target with `before -> after` and the side effects, and asks through MCP elicitation.
+  The answer is bound to the call and to the state that was shown; a changed state is read
+  again and refused. An app that cannot ask gets a fixed message and nothing changes.
+- Automatic approval (`OPENVPN_AS_APPROVAL=auto`) with hard limits: nobody becomes an
+  administrator, MFA is not switched off, no authentication method is changed, autologin is
+  not switched on, no autologin profile or link is created.
+- The account the server signs in with cannot be deleted, blocked, demoted, moved to another
+  group or switched to another authentication method, also not through its group.
+- Connection profiles: `create_connection_profile`, `create_profile_download_link` and
+  `delete_connection_profiles`. A profile or a link is saved to a file in the output folder
+  (readable by its owner only) and the tool returns the path, never the content. A name that
+  is not an existing user is refused (Access Server itself would issue a profile to a group
+  name or an unknown name). Download links are limited to 7 days and 5 uses (`autologin`: 24
+  hours and 5 uses).
+- Sessions: `block_user` sets `deny` and then disconnects the user's running sessions,
+  because Access Server does not end a running session when a user is blocked; it reports a
+  session that is still connected. `disconnect_vpn_sessions` takes usernames or single
+  sessions and does not block. The text shown to the VPN user is fixed.
+- Users: `create_user` (a list; an optional generated password goes to a file, a password is
+  never a parameter), `update_user` (one change for a list of users, a move to another
+  group, `reset_to_inherited`; `deny=true` is refused in favour of `block_user`) and
+  `delete_user` (profiles, the user, then the user's running sessions, which Access Server
+  would leave connected).
+- Groups: `create_group`, `update_group` and `delete_group`. Access Server refuses the VPN
+  connections of the members of a new group until it is restarted; `create_group` says so
+  before and after the change.
 - A change that blocks a user without disconnecting them (a move into a blocked group, a
-  reset of `deny`, a block set on a group) names the connected users in the preview and
-  in `warnings`.
+  reset of `deny`, a block set on a group) names the connected users in the approval text
+  and in `warnings`.
+- `create_support_report`, registered only in write mode: saves the Access Server support
+  report to a file and returns the path and the size, never the text. It changes nothing and
+  asks no approval; the request may take up to 5 minutes.
+- List calls: up to 100 items with one approval, every item checked before anything is
+  written, a result per item, nothing repeated after a timeout.
+- An audit log, `<config dir>/audit.jsonl`: one line per item for every write attempt.
+- Two read tools, always on: `list_connection_profiles` (who holds which connection profile;
+  never the profile file or its key; serials are strings of digits) and `list_access_lists`
+  (IPv4 access lists of users and groups, with a note that the global IP/subnet rules and
+  IPv6 access lists are not visible through the API).
+- `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
-- An Access Server version that cannot be read is treated as below the supported
-  minimum.
+- The thirteen tools of 0.1.0 are unchanged, in both modes.
+- An Access Server version that cannot be read is treated as below the supported minimum.
 - FastMCP 4.1 or newer is required.
+- Tested on Access Server 3.1.0 and 3.2.4.
 
 ## [0.1.0] - 2026-10-05
 

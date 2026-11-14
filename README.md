@@ -2,9 +2,11 @@
 
 A local [MCP](https://modelcontextprotocol.io) server that lets your own AI agent (Claude Code,
 Codex, Cursor, VS Code, OpenCode, Claude Desktop, ...) look at your **OpenVPN Access Server**
-through its Web API. This release is **read-only**: it answers questions such as "is the VPN
+through its Web API. By default it is **read-only**: it answers questions such as "is the VPN
 healthy", "who is connected", "who failed to log in today", "what can user X reach" and never
-changes anything on the server.
+changes anything on the server. Since 0.2.0 an administrator can switch on **write mode**
+(users, groups, connection profiles, block and disconnect), where every change is shown for
+approval first; see [Write mode](#write-mode).
 
 It runs on your machine, is started by your agent, and talks to Access Server with your own
 admin credentials. Nothing is hosted by anyone else.
@@ -13,7 +15,7 @@ Copyright (c) 2026 OpenVPN Inc. Licensed under the MIT License, see `LICENSE`.
 
 ## Requirements
 
-- OpenVPN Access Server **3.1 or newer** (Web API v0.2). Tested on 3.1.0 and 3.2.2.
+- OpenVPN Access Server **3.1 or newer** (Web API v0.2). Tested on 3.1.0 and 3.2.4.
 - An **admin** account on that server. Use a dedicated one for the agent.
 - [uv](https://docs.astral.sh/uv/) on your machine. It downloads Python if needed; nothing
   else has to be installed.
@@ -41,7 +43,7 @@ them yourself.
    secret in this configuration.
 4. Ask the agent something: "Is my VPN healthy?" It will call `get_status_overview`.
 
-Pin a version if you want upgrades to be explicit: `uvx as-mcp-server@0.1.0`. `uvx` keeps
+Pin a version if you want upgrades to be explicit: `uvx as-mcp-server@0.2.0`. `uvx` keeps
 using the version it first cached until you pass `@latest` or run `uv cache clean`.
 
 ### Agent setup
@@ -145,7 +147,8 @@ problem in its `error` field.
 
 ## Tools
 
-All tools are read-only except `login`, which only creates a session.
+With default settings all tools are read-only except `login`, which only creates a session.
+The tools that change the server are listed under [Write mode](#write-mode).
 
 | Tool | What it answers | Parameters |
 | --- | --- | --- |
@@ -162,10 +165,100 @@ All tools are read-only except `login`, which only creates a session.
 | `get_default_user` | The `__DEFAULT__` profile everyone inherits from | - |
 | `list_access_rulesets` | Rulesets assigned to a user, a group or `__DEFAULT__` | `owner`, `name_contains` |
 | `list_access_rules` | The rules (destination, action) inside rulesets | `ruleset_ids`, `rule_type`, `match_data_contains` |
+| `list_connection_profiles` | Who holds which connection profile: serial, type, validity, last use (never the profile or its key) | `username`, `autologin_only`, `page_size`, `offset` |
+| `list_access_lists` | IPv4 subnet access lists of users and groups | `usernames`, `group_names` |
 
 Responses are the Access Server API's own JSON. `since`/`until` are relative durations such
 as `30m`, `24h`, `7d`, `15d 20m`. "What can user X reach": rulesets for the user, for each of
-the user's groups, and for `__DEFAULT__`, then `list_access_rules` with the collected ids.
+the user's groups, and for `__DEFAULT__`, then `list_access_rules` with the collected ids,
+then `list_access_lists` for the IPv4 subnet rules. Global IP/subnet rules and IPv6 access
+lists are not visible through the API; check them in the Admin UI. Profile serials are strings
+of digits (they are too large for a JSON number).
+
+## Write mode
+
+Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers twelve more tools:
+
+| Tool | What it does | Parameters |
+| --- | --- | --- |
+| `create_connection_profile` | New profile per user, saved to a local file | `usernames`, `profile_type`, `tls_crypt_v2`, `comment` |
+| `create_profile_download_link` | One-time download link per user, saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
+| `delete_connection_profiles` | Delete profiles by serial, or every profile of one user | `serials` or `username` |
+| `block_user` | Set `deny`, disconnect the user's sessions, check that none is left | `usernames` |
+| `disconnect_vpn_sessions` | Disconnect every session of users, or single sessions; does not block | `usernames` or `sessions`, `reason` |
+| `create_support_report` | Save the Access Server support report to a local file (a read; no approval) | - |
+| `create_user` | Create users; an optional generated password goes to a local file | `users`: `username`, `group`, `admin`, `auth_method`, `deny`, `generate_password` |
+| `update_user` | One change for a list of users; move to a group; reset fields to the inherited value | `usernames`, `deny`, `deny_web`, `admin`, `autologin`, `auth_method`, `group`, `totp`, `allow_password_change`, `allow_generate_profiles`, `reroute_gw`, `reset_to_inherited` |
+| `delete_user` | Delete the user's profiles, the user, then disconnect the user's sessions | `usernames` |
+| `create_group` | Create a group | `name` and the group fields |
+| `update_group` | Change one group | `name`, the group fields, `reset_to_inherited` |
+| `delete_group` | Delete one group; its members stay as users | `name` |
+
+How to switch it on, for Claude Code:
+
+    claude mcp add openvpn-as -e OPENVPN_AS_WRITE_TOOLS=true -- uvx as-mcp-server
+
+(or add `"OPENVPN_AS_WRITE_TOOLS": "true"` to the `env` block of your agent's MCP configuration).
+`uvx as-mcp-server check` and the `connection_info` tool show whether write mode is on.
+
+**Approval.** Before anything is written, the server shows you what will change (the server,
+the action, every target with `field: before -> after`, and the side effects) and asks for a
+yes. This uses MCP elicitation, so the question is asked by your AI app, not by the model; the
+model cannot answer it. Decline or cancel and nothing changes. The state is read again after
+your yes; if someone changed it in the meantime the write is refused and you are asked to run
+the request again. An app that cannot show the question gets this answer and nothing changes:
+"Your AI app cannot show an approval prompt, so as-mcp-server did not make this change. Use
+an app that supports MCP elicitation, or set OPENVPN_AS_APPROVAL=auto in the MCP server
+settings to make changes without being asked."
+
+**Automatic approval.** `OPENVPN_AS_APPROVAL=auto` makes changes without asking. Use it only
+where you trust the agent and its inputs. Even then the server never: gives administrator
+rights, switches MFA off, changes an authentication method, switches autologin on, creates an
+autologin profile or link, or makes a change whose result it cannot compute. These are
+refused with the reason; make them in an app that shows the approval prompt.
+
+**The agent's own account is protected in every mode.** A change that would block, delete or
+demote the account as-mcp-server signs in with, move it to another group, change its
+authentication method or delete its group is refused, also when it would arrive through the
+account's group.
+
+**Lists.** A tool that takes a list handles up to 100 items in one call with one approval.
+Every item is checked before anything is written; one bad item refuses the whole call. Items
+are written in order; at the first failure the rest is not attempted, and the result says
+`done`, `partial`, `failed` or `not attempted` per item. A request that times out is reported
+and never repeated.
+
+**Secrets go to files, not to the model.** Profiles, download links, generated passwords and
+the support report are saved in `OPENVPN_AS_OUTPUT_DIR` (default `<config dir>/output`,
+created for your user only; files are readable by you only) and the tool returns the path.
+There is no way to pass a password to a tool. Delete a file once it has been delivered. An
+agent that can read files on your machine (Claude Code, Codex) can read this folder too.
+
+**Audit log.** Every write attempt, also a refused or cancelled one, is one JSON line in
+`<config dir>/audit.jsonl`: time, tool, target, outcome, approval mode, server, the state
+before and after. Secrets are not written to it. The file is not rotated.
+
+**Blocking a user.** `block_user` sets `deny` and disconnects, because Access Server does not
+end a running session when a user is blocked. `update_user` with `deny=false` unblocks.
+Blocking a group, moving a user into a blocked group or deleting a group does not disconnect
+anyone; the approval text and the result name the connected users, and
+`disconnect_vpn_sessions` ends their sessions.
+
+**Access Server versions.** Write mode is tested on Access Server 3.1 and 3.2. On a newer
+version every approval text and result carries a warning that the version is not on the
+tested list; below 3.1, or when the version cannot be read, writes are refused.
+
+Known limits of this release:
+
+- Access Server refuses the VPN connections of the members of a **new group** until the server
+  is restarted (measured on 3.1.0 and 3.2.4). `create_group` says so; this release has no
+  restart tool.
+- Download links cannot be listed or revoked. Blocking the user later does not stop an unused
+  link, though the downloaded profile cannot connect while the user is blocked.
+- A session that connected in the last few seconds is not yet in the server's session list,
+  so a block at that very moment does not see it. Check `get_active_vpn_connections` again.
+- A user cannot be taken out of every group, and an existing user cannot get a new password.
+- Access rules, access lists and server settings cannot be changed.
 
 ## Configuration reference
 
@@ -178,10 +271,13 @@ the user's groups, and for `__DEFAULT__`, then `list_access_rules` with the coll
 | `OPENVPN_AS_INSECURE` | `false` | `true` disables TLS verification. Loud: a warning is logged and `connection_info` reports it. Test servers only. |
 | `OPENVPN_AS_TIMEOUT` | `30` | request timeout in seconds |
 | `OPENVPN_AS_LOG_LEVEL` | `WARNING` | `DEBUG`, `INFO`, `WARNING`, `ERROR`; logs go to stderr and never contain secrets |
-| `OPENVPN_AS_CONFIG_DIR` | `~/.config/as-mcp-server` | where `profiles.toml` lives |
+| `OPENVPN_AS_CONFIG_DIR` | `~/.config/as-mcp-server` | where `profiles.toml` and `audit.jsonl` live |
+| `OPENVPN_AS_WRITE_TOOLS` | `false` | `true` registers the tools that change the server ([Write mode](#write-mode)) |
+| `OPENVPN_AS_APPROVAL` | `prompt` | `prompt`: ask before every change. `auto`: do not ask (with the limits listed under Write mode) |
+| `OPENVPN_AS_OUTPUT_DIR` | `<config dir>/output` | folder for profiles, download links, generated passwords and support reports |
 
 Reserved for later releases, not implemented yet: `OPENVPN_AS_PROFILE`, `OPENVPN_AS_TOOLS`,
-`OPENVPN_AS_READ_ONLY`, `OPENVPN_AS_EXTRA_HEADERS`.
+`OPENVPN_AS_EXTRA_HEADERS`.
 
 Remove stored credentials with `uvx as-mcp-server setup --clear`.
 
@@ -260,7 +356,13 @@ it `user_auth_type`), and the built-in `openvpn` administrator uses `local`.
   as a draft all the same.
 - Tool calls are rate limited: 30 in a row, then 30 per minute (one every two seconds). An
   agent stuck in a loop gets a tool error that tells it how long to wait instead of sending
-  Access Server a request per call. Listing the tools and connecting are never limited.
+  Access Server a request per call. Listing the tools and connecting are never limited. The
+  limiter counts tool calls: on newer MCP clients one approved change is two calls (the
+  question and the answer), so about 15 approved changes per minute; in automatic approval
+  mode one list call carries up to 100 changes.
+- Write mode: text from the server or from a web page can make a model *propose* a change
+  (prompt injection), but only you can approve it. `OPENVPN_AS_APPROVAL=auto` removes that
+  check, which is why it has hard limits. Read the approval text before you say yes.
 - Use a dedicated admin account so its lockout or revocation affects only the agent.
 - The keyring item is bound to the Python binary on macOS; after a `uvx` upgrade the system
   may ask once whether the new binary may read it.
@@ -270,8 +372,8 @@ it `user_auth_type`), and the built-in `openvpn` administrator uses `local`.
 
 | Access Server | Result |
 | --- | --- |
-| 3.2.2 | all tools verified |
-| 3.1.0 | all tools verified |
+| 3.2.4 | all tools verified, read and write |
+| 3.1.0 | all tools verified, read and write |
 | 3.0.x | not supported (Web API v0.1) |
 
 The Web API is declared unstable by OpenVPN; an Access Server upgrade that changes it needs a
@@ -280,9 +382,9 @@ stops working.
 
 ## Roadmap and feedback
 
-This first release only reads. Later releases may add safe write operations (users, groups, access
-rules, profiles) and server administration, each behind explicit opt-in. Tell us what is
-missing with the **Tool request** issue template and report problems with **Bug report**.
+0.2.0 adds the first write operations behind an explicit opt-in. Later releases may add
+access rules, access lists and applying server changes. Tell us what is missing with the
+**Tool request** issue template and report problems with **Bug report**.
 
 ## Development
 

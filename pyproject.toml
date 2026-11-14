@@ -1,6 +1,6 @@
 [project]
 name = "as-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local MCP server that lets AI agents monitor an OpenVPN Access Server through its Web API (read-only)"
 readme = "README.md"
 license = "MIT"

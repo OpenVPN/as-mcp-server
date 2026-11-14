@@ -12,7 +12,7 @@ Instructions for any AI coding agent (Claude Code, Codex, Cursor, VS Code, OpenC
 - `make live` - tests against the Docker dev stand (`dev/README.md`), needs `dev/.local/*.env`
 - `make release-build` - sdist + wheel as published (dependencies pinned to `uv.lock`, `pyproject.toml` restored)
 - `make stand-up` / `make stand-down` - start/stop the dev stand (two Access Servers and FreeRADIUS)
-- `uv run python dev/evals.py` - ask a real agent the eval questions on the stand; run it after changing the server instructions or a tool description (`dev/README.md`)
+- `uv run python dev/evals.py` - ask a real agent the eval questions on the stand; run it after changing the server instructions or a tool description (`dev/README.md`); `--approval auto` and `--approval prompt` are the two write-mode passes
 - `uv run as-mcp-server --version|setup|check` - the CLI
 
 ## Rules
@@ -21,4 +21,6 @@ Instructions for any AI coding agent (Claude Code, Codex, Cursor, VS Code, OpenC
 - Never log, print or store passwords, tokens or TOTP secrets. `redact()` in `client.py` lists the keys removed from API responses.
 - Tests never reach the network: `httpx.MockTransport` + `tests/fixtures/*.json` (real captured responses, see the README there). Test names are sentences.
 - One commit per concern.
+- Write mode (`OPENVPN_AS_WRITE_TOOLS=true`): every change goes through `writes.run_write` (validate, read, guards, preview, approval, re-read, write, verify, audit). A new write tool is a small `WriteOp`; it never calls the API outside that flow, never returns a secret (files via `outputs.write_secret_file`), and never takes a password as a parameter. Measure the endpoint on the stand before writing the tool (`dev/README.md` lists what was measured).
+- A comment starting with `ponytail:` marks a deliberate shortcut and says when it stops being fine (today: the audit log is not rotated). Do not remove one without doing the work it names.
 - Unknown owner values are placeholders of the form `<MOCK_...>` (none left today); `make placeholders` lists them.

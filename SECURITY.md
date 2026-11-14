@@ -24,7 +24,54 @@ pose as log lines or instructions (prompt injection). `get_log_reports` and
 platform, version or proxied address only when it looks like a plain value and otherwise replace it with a
 `{"withheld": true, ...}` marker that carries no part of the text; server-written error
 text loses control characters and is capped at 300 characters. This is a heuristic: a short
-plain-looking string still gets through. Responses carry no other credentials in this
-read-only release. Tool calls are rate limited (30 in a row, then 30 per minute) so a
+plain-looking string still gets through. Tool calls are rate limited (30 in a row, then 30 per minute) so a
 looping agent cannot flood Access Server. Malware running as the same OS user is out of
 scope, as for every local tool.
+
+## Write mode
+
+Write mode (`OPENVPN_AS_WRITE_TOOLS=true`, off by default) lets the agent change users,
+groups, connection profiles and sessions. What protects the server then:
+
+- **A person approves every change.** The server builds the approval text itself from the
+  state it read (the server, the action, every target, `before -> after`, side effects) and
+  asks through MCP elicitation, which the AI app shows to the person; the model cannot answer
+  it. Names and values in the text are stripped of line breaks, control and invisible
+  characters and cut to a fixed length, so a crafted name cannot add lines to it. The answer
+  is bound to the call and to the state that was shown: other arguments, a changed state, a
+  reused or unknown answer write nothing. So prompt injection can make a model propose a
+  change, and cannot make it happen.
+- **`OPENVPN_AS_APPROVAL=auto` removes the person.** It is meant for automation the
+  administrator trusts. It is limited in code: no administrator rights are given, MFA is not
+  switched off, no authentication method is changed, autologin is not switched on, no
+  autologin profile or link is created, and a change whose result cannot be computed is
+  refused. Everything else, including deletes and blocks, is done without a question. Do not
+  combine `auto` with an agent that reads untrusted text.
+- **The account the server signs in with cannot be locked out** in either mode: not blocked,
+  deleted, demoted, moved or switched to another authentication method, also not through its
+  group.
+- **Secrets never reach the model through a tool result.** Profile contents and their private
+  keys, download links, generated passwords and the support report are written to files in
+  `OPENVPN_AS_OUTPUT_DIR` (folder `0700` when the server creates it, files `0600`, never
+  through a symbolic link, never over an existing file); results, approval texts, the audit
+  log and the process log hold the path only. A password is never a tool parameter. This
+  covers tool results only: an agent with file tools (Claude Code, Codex) can read the output
+  folder like any other file of the user. Point `OPENVPN_AS_OUTPUT_DIR` outside the folders
+  the agent works in, and delete a file once it has been delivered. On Windows the files rely
+  on the permissions of the user profile.
+- **Download links cannot be listed or revoked.** A link is limited to 7 days and 5 uses
+  (24 hours for an autologin link) and is refused for autologin in `auto`. Blocking the user
+  afterwards does not stop an unused link; the profile it returns cannot connect while the
+  user is blocked.
+- **Every attempt is recorded.** `<config dir>/audit.jsonl` (file `0600`) gets one line per
+  item for every write attempt, also refused and cancelled ones: time, tool, target, outcome,
+  approval mode, server, administrator, state before and after. Known secret keys are
+  redacted. When the line cannot be written before the change, the change is not made. The
+  file is local, is not rotated and is not protected against the user who owns it.
+- **The server never repeats a write.** A request that times out is reported with the state
+  read afterwards, and later items of the same list are not attempted.
+
+Known gaps: a VPN session that connected in the last few seconds is not yet listed by Access
+Server, so a block or a delete at that moment does not see it; blocking a group or moving a
+user into a blocked group does not disconnect running sessions (the tools name them); an
+Access Server version newer than the tested ones is allowed with a warning.
