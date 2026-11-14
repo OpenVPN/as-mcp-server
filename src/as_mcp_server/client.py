@@ -44,6 +44,7 @@ SECRET_KEYS = frozenset(
         "challenge_context",
         "pvt_google_auth_secret",
         "password",
+        "new_password",
         "auth_token",
         "subkey",
     }
@@ -162,6 +163,10 @@ MSG_FORBIDDEN = (
 MSG_NOT_FOUND = (
     "{method} {path} is not available on this Access Server (404). It requires Web API "
     "v0.2, i.e. Access Server 3.1 or newer; call get_server_info to see the version."
+)
+# A 404 that carries a reason is about an object (a user, a session), not a path.
+MSG_OBJECT_NOT_FOUND = (
+    "Access Server did not find what {method} {path} names (404): {reason}"
 )
 MSG_BAD_REQUEST = "Access Server rejected {method} {path} (400): {reason}{detail}"
 MSG_SERVER_ERROR = "Access Server failed to handle {method} {path} ({status}): {reason}"
@@ -850,6 +855,11 @@ class AccessServerClient:
                 MSG_FORBIDDEN.format(method=method, path=path, reason=reason)
             )
         if status == 404:
+            named = body.get("reason") if isinstance(body, dict) else None
+            if isinstance(named, str) and named:
+                raise NotFoundError(
+                    MSG_OBJECT_NOT_FOUND.format(method=method, path=path, reason=reason)
+                )
             raise NotFoundError(MSG_NOT_FOUND.format(method=method, path=path))
         if status == 400:
             raise ToolError(

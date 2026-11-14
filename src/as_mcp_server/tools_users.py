@@ -210,10 +210,11 @@ def _check_new_name(name: str, kind: str) -> None:
         )
     if not 1 <= len(name) <= MAX_NAME:
         raise ToolError(f"Refused: a {kind} name has 1 to {MAX_NAME} characters.")
-    if name != name.strip() or not name.isprintable():
+    if clean(name, MAX_NAME + 1) != name or not name.isprintable():
         raise ToolError(
             f"Refused: the {kind} name {clean(name) or '(empty)'} starts or ends "
-            "with a space, or holds a line break or an invisible character."
+            "with a space, or holds a line break, a double space or an invisible "
+            "character."
         )
 
 
@@ -247,6 +248,13 @@ def _guarded(state: Mapping[str, Any]) -> dict[str, Any]:
     return {name: state[name] for name in (*FIELDS, "group")}
 
 
+def _word(value: Any) -> str:
+    """A value as the rest of the preview writes it: true and false, not Python's."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return clean(value)
+
+
 def _differs(before: Any, after: Any) -> bool:
     return after is UNKNOWN or type(before) is not type(after) or before != after
 
@@ -268,7 +276,7 @@ def _preview_changes(
             inherited = (
                 value
                 if value is UNKNOWN
-                else f"inherited ({clean(source)} value: {value})"
+                else f"inherited ({clean(source)} value: {_word(value)})"
             )
             shown[name] = (before[name], inherited)
         elif name in changes or _differs(before[name], value):
@@ -348,6 +356,7 @@ class _CreateUser:
     action: str = "Create user"
     note: str = NOTE_LIVE
     _created: set[str] = field(default_factory=set)
+    _files: dict[str, Path] = field(default_factory=dict)
 
     def key(self, item: NewUser) -> str:
         return item.username.casefold()
@@ -399,7 +408,7 @@ class _CreateUser:
         changes: dict[str, tuple[Any, Any]] = {}
         if item.group is not None:
             changes["group"] = (None, item.group)
-        for shown in ("admin", "deny", "auth_method", "totp"):
+        for shown in ("admin", "deny", "deny_web", "auth_method", "totp", "autologin"):
             changes[shown] = (None, after[shown])
         effects: list[str] = []
         if item.deny:
@@ -439,6 +448,7 @@ class _CreateUser:
         except OutputError as exc:
             raise Partial(done, f"no password was set: {exc}") from exc
         known = {"path": str(path), "reminder": DELIVERY_REMINDER}
+        self._files[name] = path
         try:
             await client.post(
                 "/auth/password/change", {"username": name, "new_password": password}
@@ -461,7 +471,16 @@ class _CreateUser:
         done = ["user created"]
         _check_written(user, self._fields(item), (), done)
         if item.generate_password and user.get("password_defined") is not True:
-            raise Partial(done, "Access Server does not show a password for the user")
+            # A file with a password that does not work must not be handed out.
+            saved = self._files.pop(name, None)
+            if saved is not None:
+                saved.unlink(missing_ok=True)
+            raise Partial(
+                done,
+                "the password was not set (Access Server shows no password for "
+                "the user) and the password file was removed",
+                {"path": None, "reminder": None},
+            )
         return {**_state(user), "password_defined": user.get("password_defined")}
 
 
@@ -576,7 +595,7 @@ class _DeleteUser:
                 item,
                 {"user": ("exists", "deleted")},
                 (
-                    f"also deletes {profiles} connection profile(s)",
+                    f"deletes {profiles} connection profile(s)",
                     f"disconnects {sessions} active session(s)",
                     "cannot be undone",
                 ),
@@ -604,11 +623,17 @@ class _DeleteUser:
         except ToolError as exc:
             if not done:
                 raise
-            hint = (
-                " Call disconnect_vpn_sessions for this user."
-                if "user deleted" in done
-                else ""
-            )
+            if "user deleted" in done:
+                hint = " Call disconnect_vpn_sessions for this user."
+            elif isinstance(exc, RequestTimeoutError):
+                # Nobody saw the answer: the user may be gone and still connected.
+                hint = (
+                    " It is not known whether the user was deleted; the request "
+                    "was not repeated. Check with list_users, and if the user is "
+                    "gone call disconnect_vpn_sessions for this user."
+                )
+            else:
+                hint = ""
             raise Partial(done, f"{exc}{hint}") from exc
         return {
             "deleted_profiles": len(before["profiles"]),
@@ -653,6 +678,16 @@ class _CreateGroup:
             return _state(await read_group(client, item))
         _check_new_name(item, "group")
         await _refuse_taken(client, item, "group")
+        waiting = await _members(client, item)
+        if waiting:
+            # Access Server keeps any text as a user's group, so users can point at
+            # a group that is not there; creating it would change them at once.
+            names = _some_names(sorted(str(user["name"]) for user in waiting))
+            raise ToolError(
+                f"Refused: {len(waiting)} user(s) already have {clean(item)} as "
+                f"their group although no such group exists ({names}); creating "
+                "it would change these users at once. Nothing was changed."
+            )
         return {"exists": False}
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:

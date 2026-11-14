@@ -37,7 +37,7 @@ from as_mcp_server.effective import (
 )
 from as_mcp_server.guards import Effect, auto_limit_reason, lockout_reason
 from as_mcp_server.outputs import probe_output_dir
-from as_mcp_server.preview import PreviewItem, clean, render
+from as_mcp_server.preview import PreviewItem, clean, render, shown_name
 from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
@@ -63,6 +63,28 @@ NOTE_USERPROP_CACHE = (
 )
 MSG_OLD_SERVER = (
     "Refused: writes need Access Server 3.1 or newer; this server reports {version}."
+)
+# Appended to the description of every tool that goes through run_write.
+RESULT_HELP = (
+    " Result: 'items', one per target, each with 'outcome': done, partial, failed, "
+    "refused_changed, unknown_after_timeout or not attempted. The list stops at the "
+    "first item that is not done. Tell the user how many items were done, read "
+    "'detail' for what is left to do, never repeat an item that is done, partial or "
+    "unknown_after_timeout, and relay 'notes'."
+)
+# Appended to the description of every tool that saves a secret to a file.
+SECRET_FILE_HELP = (
+    " Do not open, copy, send or delete the saved file yourself: give the user its "
+    "path and the reminder."
+)
+MSG_EARLIER_ITEMS_WRITTEN = (
+    "The items before this one in the list were already written: repeat the call "
+    "only for this item and the ones marked not attempted."
+)
+MSG_INTERRUPTED = (
+    "The tool call was interrupted while this change was being written; whether it "
+    "was applied is not known. The write was not repeated; read the current state "
+    "before doing anything else."
 )
 MSG_NO_OWN_RECORD = (
     "Refused: the state of the signed-in account ({name}) cannot be read, so "
@@ -385,7 +407,7 @@ async def run_write[Item](
             f"Refused: {len(items)} items in one call; the limit is {MAX_ITEMS}. "
             "Nothing was changed.",
         )
-    rows = [_Row(clean(op.target(item)) or '""') for item in items]
+    rows = [_Row(shown_name(op.target(item))) for item in items]
     if len(rows) > 1:
         run.batch_id = uuid.uuid4().hex
     seen: dict[str, str] = {}
@@ -418,8 +440,8 @@ async def run_write[Item](
         # 4. Read and plan every item before anything is written.
         own = await deps.own()
         for item, row in zip(items, rows, strict=True):
-            row.before = await op.read(client, item)
             try:
+                row.before = await op.read(client, item)
                 row.plan = op.plan(item, row.before, own)
             except CannotCompute as exc:
                 raise ToolError(
@@ -473,13 +495,16 @@ async def run_write[Item](
             for index, (item, row) in enumerate(zip(items, rows, strict=True)):
                 try:
                     current = await op.read(client, item)
-                except ToolError as exc:
+                except (ToolError, CannotCompute) as exc:
+                    # The target is gone or unreadable since the preview: say what
+                    # the server says now, which tells more than "changed".
                     row.outcome, row.detail = "failed", str(exc)
                     break
                 if canonical(current) != canonical(row.before):
                     if index == 0:
                         raise run.refuse(rows, "refused_changed", MSG_CHANGED)
-                    row.outcome, row.detail = "refused_changed", MSG_CHANGED
+                    row.outcome = "refused_changed"
+                    row.detail = f"{MSG_CHANGED} {MSG_EARLIER_ITEMS_WRITTEN}"
                     break
                 if not await _write_one(client, op, item, row):
                     break
@@ -514,7 +539,23 @@ async def run_write[Item](
 async def _write_one[Item](
     client: AccessServerClient, op: WriteOp[Item], item: Item, row: _Row
 ) -> bool:
-    """Apply and verify one item. False stops the list."""
+    """Apply and verify one item. False stops the list.
+
+    Whatever ends this function, the row has an outcome by then: the audit line of
+    a change that may have reached the server must not depend on how the call ended
+    (a cancelled tool call raises `CancelledError`, which is not an `Exception`).
+    """
+    try:
+        return await _apply_and_verify(client, op, item, row)
+    except BaseException:
+        if row.outcome == "not attempted":
+            row.outcome, row.detail = "unknown_after_timeout", MSG_INTERRUPTED
+        raise
+
+
+async def _apply_and_verify[Item](
+    client: AccessServerClient, op: WriteOp[Item], item: Item, row: _Row
+) -> bool:
     try:
         row.extra = dict(await op.apply(client, item, row.before or {}))
     except Partial as exc:
@@ -527,7 +568,7 @@ async def _write_one[Item](
             f"{exc} The write was not repeated; 'after' is the state read "
             "afterwards, when it could be read."
         )
-        row.after = await _state_or_none(op.verify(client, item))
+        await _state_after_timeout(client, op, item, row)
         return False
     except ToolError as exc:
         row.outcome, row.detail = "failed", str(exc)
@@ -549,8 +590,37 @@ async def _write_one[Item](
             "(done: written)"
         )
         return False
+    except Exception as exc:
+        log.exception("unexpected error after writing %s", row.target)
+        row.outcome = "partial"
+        row.detail = (
+            "Written, but the state afterwards could not be read: unexpected error "
+            f"({type(exc).__name__}); see the server log. (done: written)"
+        )
+        return False
     row.outcome = "done"
     return True
+
+
+async def _state_after_timeout[Item](
+    client: AccessServerClient, op: WriteOp[Item], item: Item, row: _Row
+) -> None:
+    """After a write nobody saw answered: the state now, and what `verify` misses.
+
+    When the server did apply the write, `verify` may find a later step undone (a
+    blocked user still connected, a new user without the password); that must
+    reach the administrator, not be dropped with the failed read."""
+    try:
+        row.after = await op.verify(client, item)
+    except Partial as exc:
+        row.detail = f"{row.detail} Read afterwards: {exc.error}."
+        row.extra = {**row.extra, **exc.result}
+        row.after = await _state_or_none(op.read(client, item))
+    except (ToolError, CannotCompute):
+        row.after = None
+    except Exception:
+        log.exception("unexpected error while reading %s after a timeout", row.target)
+        row.after = None
 
 
 def _partial(row: _Row, exc: Partial) -> None:
@@ -563,5 +633,5 @@ def _partial(row: _Row, exc: Partial) -> None:
 async def _state_or_none(reading: Any) -> Any:
     try:
         return await reading
-    except (ToolError, Partial):
+    except (ToolError, Partial, CannotCompute):
         return None

@@ -28,6 +28,8 @@ from as_mcp_server.writes import (
     DESTRUCTIVE,
     MAX_ITEMS,
     NOTE_LIVE,
+    RESULT_HELP,
+    SECRET_FILE_HELP,
     WRITE,
     Own,
     Partial,
@@ -284,9 +286,12 @@ class _CreateLink(_UserOp):
         if self.lifetime > max_lifetime or self.usages > max_usages:
             raise ToolError(
                 f"Refused: {_article(kind)} {kind} link may be valid for at most "
-                f"{max_lifetime // 3600} hours and {max_usages} uses."
+                f"{max_lifetime} seconds ({max_lifetime // 3600} hours) and "
+                f"{max_usages} uses; this call asked for {self.lifetime} seconds "
+                f"and {self.usages} use(s). Nothing was created."
             )
-        terms = f"valid until {self._valid_until()}, {self.usages} use(s)"
+        # The lifetime starts when the link is created, after the approval.
+        terms = f"valid until about {self._valid_until()}, {self.usages} use(s)"
         effects = [
             f"cannot be revoked, {terms}; blocking the user later does not stop "
             "the link; profiles already downloaded through it can be deleted"
@@ -518,6 +523,8 @@ def register_profile_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "'items': outcome, path, serial (a string of digits) and a reminder to "
             "delete the file after delivery. To let a user fetch the profile "
             "themselves, use create_profile_download_link instead."
+            + SECRET_FILE_HELP
+            + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -573,7 +580,7 @@ def register_profile_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "also when the user is blocked later. Limits: userlogin at most 168 "
             "hours and 5 uses, autologin at most 24 hours and 5 uses. Each item of "
             "'items': outcome, path, valid_until (UTC), usages and a reminder to "
-            "delete the file after delivery."
+            "delete the file after delivery." + SECRET_FILE_HELP + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -630,7 +637,7 @@ def register_profile_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "owner, "
             "type and comment of every profile before approving. Find serials "
             "with list_connection_profiles. The item of 'items' has outcome and "
-            "'deleted', the serials that were deleted."
+            "'deleted', the serials that were deleted." + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},

@@ -571,7 +571,7 @@ async def test_a_user_without_a_session_or_a_session_that_is_gone_refuses_the_ca
         await server.call("disconnect_vpn_sessions", {"usernames": ["bob", "carol"]})
     assert str(refused.value) == (
         "carol has no active VPN session on this Access Server (names are "
-        "case-sensitive)."
+        "case-sensitive). Nothing was disconnected; call again without this name."
     )
     with pytest.raises(ToolError) as refused:
         await server.call(

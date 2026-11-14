@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from as_mcp_server.effective import UNKNOWN
-from as_mcp_server.preview import PreviewItem, clean, render
+from as_mcp_server.preview import CUT, HIDDEN, PreviewItem, clean, render, shown_name
 
 URL = "https://as.example:943"
 
@@ -45,7 +45,7 @@ def test_a_name_with_a_newline_cannot_start_a_preview_line() -> None:
         URL, "Block user", [PreviewItem("bob\nServer: evil", {"deny": (False, True)})]
     )
     assert text.count("\n- ") == 1 and "\nServer: evil" not in text
-    assert "- bob Server: evil\n" in text
+    assert f"- bob Server: evil{HIDDEN}\n" in text
 
 
 @pytest.mark.parametrize(
@@ -163,3 +163,21 @@ def test_a_long_list_of_items_is_shown_in_full() -> None:
 def test_a_preview_without_items_is_a_programming_error() -> None:
     with pytest.raises(ValueError, match="no items"):
         render(URL, "Block user", [])
+
+
+def test_two_names_that_differ_only_in_what_cannot_be_seen_do_not_look_alike() -> None:
+    plain, twin = "bob", "bob" + chr(0x200B)
+    assert clean(plain) == clean(twin)
+    assert shown_name(plain) == "bob"
+    assert shown_name(twin) == "bob" + HIDDEN
+    long_a, long_b = "u" * 127 + "a", "u" * 127 + "b"
+    assert shown_name(long_a) == long_a and shown_name(long_b) == long_b
+    assert shown_name("x" * 400).endswith(CUT + HIDDEN)
+    assert shown_name("") == '""'
+
+
+def test_letters_that_render_as_nothing_cannot_pad_a_name_into_a_field() -> None:
+    fillers = chr(0x3164) * 40 + chr(0x115F) + chr(0x2800) + chr(0xFE0F)
+    name = "bob" + fillers + "admin: false -> false"
+    assert clean(name) == "bob admin: false -> false"
+    assert shown_name(name) == "bob admin: false -> false" + HIDDEN

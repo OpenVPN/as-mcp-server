@@ -49,6 +49,10 @@ def lockout_reason(
         if not _same(effect.name, own_name):
             continue
         before, after = effect.before, effect.after
+        if before is None:
+            # A record that is being created is not the account that is signed in,
+            # also when the two names differ only in letter case.
+            continue
         if after is None:
             return "the own account would be deleted"
         for field in OWN_SIGN_IN:

@@ -13,12 +13,12 @@ from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 
-from as_mcp_server import approval
-from as_mcp_server.audit import AuditLog
+from as_mcp_server import approval, texts
+from as_mcp_server.audit import AuditError, AuditLog
 from as_mcp_server.client import ClientHolder, RequestTimeoutError
 from as_mcp_server.effective import UNKNOWN, CannotCompute
 from as_mcp_server.guards import Effect
-from as_mcp_server.preview import PreviewItem
+from as_mcp_server.preview import HIDDEN, PreviewItem
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
@@ -29,6 +29,8 @@ from as_mcp_server.texts import (
 )
 from as_mcp_server.writes import (
     MAX_ITEMS,
+    MSG_EARLIER_ITEMS_WRITTEN,
+    MSG_INTERRUPTED,
     NOTE_LIVE,
     Own,
     Partial,
@@ -84,6 +86,9 @@ class FakeOp:
         self.partial: set[str] = set()
         self.crash: set[str] = set()
         self.lose_write: set[str] = set()
+        self.cancel: set[str] = set()
+        self.verify_crash: set[str] = set()
+        self.verify_cancel: set[str] = set()
         self.slow = 0.0
         self.owns: list[Own] = []
 
@@ -149,12 +154,19 @@ class FakeOp:
         if name in self.partial:
             self.world[name]["value"] = item["value"]
             raise Partial(["created"], "the file could not be saved", {"serial": "7"})
+        if name in self.cancel:
+            self.world[name]["value"] = item["value"]  # the request was sent
+            raise asyncio.CancelledError
         if name not in self.lose_write:
             self.world[name]["value"] = item["value"]
         return {"path": f"/out/{name}"} if item.get("with_path") else {}
 
     async def verify(self, client: Any, item: dict[str, Any]) -> dict[str, Any]:
         self.events.append(("verify", item["name"]))
+        if item["name"] in self.verify_crash:
+            raise KeyError("LEAK-missing field")
+        if item["name"] in self.verify_cancel:
+            raise asyncio.CancelledError
         state = {"value": self.world[item["name"]]["value"]}
         if state["value"] != item["value"]:
             raise Partial(["written"], "the server does not show the new value")
@@ -505,7 +517,8 @@ async def test_a_later_item_that_changed_stops_the_list_there(tmp_path: Path) ->
             await client.call_tool("fake_change", {"items": to(2, "a", "b", "c")})
         ).structured_content
     assert outcomes(result) == ["done", "refused_changed", "not attempted"]
-    assert result["items"][1]["detail"] == MSG_CHANGED
+    assert result["items"][1]["detail"] == f"{MSG_CHANGED} {MSG_EARLIER_ITEMS_WRITTEN}"
+    assert "repeat the call only for this item" in result["items"][1]["detail"]
     assert stand.op.applied == ["a"]
     assert [line["outcome"] for line in stand.audit()] == ["applied", "refused_changed"]
 
@@ -772,9 +785,10 @@ async def test_a_name_with_line_breaks_is_one_clean_target_everywhere(
     stand = Stand(tmp_path, world={name: {"value": 1}})
     seen: list[str] = []
     result = await stand.call(to(2, name), seen=seen)
-    assert result["items"][0]["target"] == "a - openvpn deny: false -> true"
+    shown = "a - openvpn deny: false -> true" + HIDDEN
+    assert result["items"][0]["target"] == shown
     assert seen[0].count("\n- ") == 1
-    assert stand.audit()[0]["target"] == "a - openvpn deny: false -> true"
+    assert stand.audit()[0]["target"] == shown
 
 
 async def test_read_user_and_read_group_find_exact_names_only(tmp_path: Path) -> None:
@@ -812,3 +826,141 @@ async def test_the_own_record_is_the_exact_name_when_names_differ_only_in_case(
     own = await stand.deps.own()
     assert own.name == "openvpn" and own.group is None
     assert own.user["admin"]["value"] is True
+
+
+# --- a change that reached the server always leaves a trace -------------------------
+
+
+@pytest.mark.parametrize("where", ["cancel", "verify_cancel"])
+async def test_a_call_cancelled_during_the_write_still_gets_its_audit_line(
+    tmp_path: Path, where: str
+) -> None:
+    stand = Stand(tmp_path, mode="auto")
+    getattr(stand.op, where).add("b")
+    with pytest.raises(BaseException) as error:
+        await stand.call(to(2, "a", "b", "c"))
+    assert not isinstance(error.value, AssertionError)
+    assert stand.world["b"]["value"] == 2  # it did reach the server
+    lines = stand.audit()
+    assert [(line["target"], line["outcome"]) for line in lines] == [
+        ("a", "applied"),
+        ("b", "unknown_after_timeout"),
+    ]
+    assert lines[1]["error"] == MSG_INTERRUPTED
+    assert stand.world["c"]["value"] == 1
+
+
+async def test_an_unexpected_error_after_the_write_is_partial_and_audited(
+    tmp_path: Path,
+) -> None:
+    stand = Stand(tmp_path)
+    stand.op.verify_crash = {"a"}
+    result = await stand.call(to(2, "a", "b"))
+    assert outcomes(result) == ["partial", "not attempted"]
+    detail = result["items"][0]["detail"]
+    assert "Written, but the state afterwards could not be read" in detail
+    assert "KeyError" in detail and "LEAK" not in json.dumps(result)
+    assert [line["outcome"] for line in stand.audit()] == ["partial"]
+    assert result["notes"] == [NOTE_LIVE]
+
+
+async def test_after_a_timeout_the_result_says_what_the_check_found_missing(
+    tmp_path: Path,
+) -> None:
+    stand = Stand(tmp_path)
+    stand.op.time_out = {"a"}
+
+    async def half_done(client: Any, item: dict[str, Any]) -> dict[str, Any]:
+        raise Partial(["deny set"], "a session is still connected", {"hint": "x"})
+
+    stand.op.verify = half_done  # type: ignore[method-assign]
+    result = await stand.call(to(2, "a"))
+    (item,) = result["items"]
+    assert item["outcome"] == "unknown_after_timeout"
+    assert "not repeated" in item["detail"]
+    assert item["detail"].endswith("Read afterwards: a session is still connected.")
+    assert item["after"] == {"value": 2} and item["hint"] == "x"
+    assert stand.op.applied == ["a"]
+
+
+async def test_a_record_that_cannot_be_read_is_a_refusal_with_an_audit_line(
+    tmp_path: Path,
+) -> None:
+    stand = Stand(tmp_path)
+
+    async def unreadable(client: Any, item: dict[str, Any]) -> dict[str, Any]:
+        raise CannotCompute("the record has no readable deny")
+
+    stand.op.read = unreadable  # type: ignore[method-assign]
+    with pytest.raises(ToolError, match="cannot be computed"):
+        await stand.call(to(2, "a"))
+    assert [line["outcome"] for line in stand.audit()] == ["failed"]
+
+
+async def test_a_failed_audit_write_does_not_hide_a_change_that_was_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stand = Stand(tmp_path, mode="auto")
+
+    def refuse(**kwargs: Any) -> None:
+        raise AuditError("Cannot write the audit log audit.jsonl: disk full.")
+
+    monkeypatch.setattr(stand.deps.audit, "append", refuse)
+    result = await stand.call(to(2, "a", "b"))
+    assert outcomes(result) == ["done", "done"]
+    assert stand.world["a"]["value"] == 2
+    assert result["notes"] == [
+        NOTE_LIVE,
+        "Cannot write the audit log audit.jsonl: disk full.",
+    ]
+
+
+async def test_secret_keys_in_the_state_are_masked_in_the_result(
+    tmp_path: Path,
+) -> None:
+    stand = Stand(tmp_path, mode="auto")
+
+    async def with_secret(client: Any, item: dict[str, Any]) -> dict[str, Any]:
+        return {"value": stand.world[item["name"]]["value"], "totp_secret": "LEAK"}
+
+    stand.op.read = with_secret  # type: ignore[method-assign]
+    stand.op.verify = with_secret  # type: ignore[method-assign]
+    result = await stand.call(to(1, "a"))
+    assert "LEAK" not in json.dumps(result)
+    assert result["items"][0]["before"]["totp_secret"] == "<redacted>"
+    assert result["items"][0]["after"]["totp_secret"] == "<redacted>"
+
+
+def test_the_fixed_texts_are_the_ones_agreed_in_the_design() -> None:
+    """Agents relay these word for word, and evals look for them: a reworded text
+    is a behaviour change, so each one is written out here."""
+    assert texts.MSG_CANCELLED == "Cancelled by the admin; nothing was changed."
+    assert texts.MSG_NO_ELICITATION == (
+        "Your AI app cannot show an approval prompt, so as-mcp-server did not make "
+        "this change. Use an app that supports MCP elicitation, or set "
+        "OPENVPN_AS_APPROVAL=auto in the MCP server settings to make changes without "
+        "being asked."
+    )
+    assert texts.MSG_CHANGED == (
+        "Changed on the server since the preview; nothing was written. Run the "
+        "request again."
+    )
+    assert texts.MSG_LOCKOUT == (
+        "Refused: this change would lock as-mcp-server out of its own admin account "
+        "({name}). Make it in the Admin UI if it is really intended."
+    )
+    assert texts.MSG_AUTO_LIMIT == (
+        "Refused in automatic approval mode: {reason}. Repeat it in an app that "
+        "shows the approval prompt, or in the Admin UI."
+    )
+    assert texts.MSG_USE_BLOCK == (
+        "Refused: use block_user to block a user; it also disconnects the user's "
+        "sessions."
+    )
+    assert texts.MSG_NOT_DISCONNECTED == (
+        "{name} is blocked but is not disconnected by this change; use "
+        "disconnect_vpn_sessions."
+    )
+    assert texts.DEFAULT_REASON == "Disconnected through as-mcp-server"
+    assert texts.CLIENT_REASON == "Disconnected by your administrator."
+    assert texts.MSG_ONE_TARGET == "Give exactly one of {a} or {b}."

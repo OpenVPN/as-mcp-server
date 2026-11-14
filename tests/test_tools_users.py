@@ -519,7 +519,7 @@ async def test_a_user_is_created_with_what_was_asked_and_nothing_else(
         ({"username": "staff"}, "staff is the name of an existing group"),
         ({"username": "__DEFAULT__"}, "__DEFAULT__ is the server's default record"),
         ({"username": " dave"}, "starts or ends with a space"),
-        ({"username": "da\nve"}, "line break or an invisible character"),
+        ({"username": "da\nve"}, "line break, a double space or an invisible"),
         ({"username": "da" + chr(0x202E) + "ve"}, "invisible character"),
         ({"username": "dave", "group": "nobody"}, "There is no group named nobody"),
         ({"username": "dave", "group": "bob"}, "bob is a user, not a group"),
@@ -796,7 +796,7 @@ async def test_reset_to_inherited_sends_null_and_previews_the_inherited_value(
         seen=seen,
     )
     assert server.sent(SET) == [[{"name": "alice", "totp": None}]]
-    assert "    totp: true -> inherited (staff value: False)" in seen[0]
+    assert "    totp: true -> inherited (staff value: false)" in seen[0]
     item = only(result)
     assert item["before"]["own"] == ["totp"] and item["after"]["own"] == []
     assert item["after"]["totp"] is False
@@ -818,8 +818,8 @@ async def test_a_reset_of_allow_password_change_previews_the_group_value(
         seen=seen,
     )
     text = seen[0]
-    assert "allow_password_change: true -> inherited (staff value: False)" in text
-    assert "allow_password_change: false -> inherited (server-wide value: True)" in text
+    assert "allow_password_change: true -> inherited (staff value: false)" in text
+    assert "allow_password_change: false -> inherited (server-wide value: true)" in text
     assert server.value("alice", "allow_password_change") is False
     assert server.value("bob", "allow_password_change") is True
 
@@ -887,7 +887,7 @@ async def test_an_inherited_reroute_gw_of_true_set_to_global_is_not_a_verify_mis
         {"usernames": ["bob"], "reset_to_inherited": ["reroute_gw"]},
         seen=seen,
     )
-    assert "reroute_gw: global -> inherited (server-wide value: True)" in seen[0]
+    assert "reroute_gw: global -> inherited (server-wide value: true)" in seen[0]
     assert server.value("bob", "reroute_gw") is True
 
 
@@ -984,7 +984,7 @@ async def test_resetting_deny_to_an_inherited_true_names_the_connected_user(
         "update_user", {"usernames": ["bob"], "reset_to_inherited": ["deny"]}, seen=seen
     )
     line = MSG_NOT_DISCONNECTED.format(name="bob")
-    assert "deny: false -> inherited (blocked value: True)" in seen[0]
+    assert "deny: false -> inherited (blocked value: true)" in seen[0]
     assert f"also: {line}" in seen[0]
     assert only(result)["warnings"] == [line]
     assert server.value("bob", "deny") is True
@@ -1158,7 +1158,7 @@ async def test_a_user_in_a_group_that_does_not_exist_can_still_be_changed(
     )
     item = only(result)
     assert item["outcome"] == "done" and item["after"]["group"] == "ghost-group"
-    assert "totp: true -> inherited (server-wide value: False)" in seen[0]
+    assert "totp: true -> inherited (server-wide value: false)" in seen[0]
     assert "group_state" not in item["before"]
 
 
@@ -1210,7 +1210,7 @@ async def test_delete_removes_profiles_then_the_user_then_disconnects(
     text = seen[0]
     assert "Action: Delete user (1 item)" in text
     assert "    user: exists -> deleted" in text
-    assert "    also: also deletes 2 connection profile(s)" in text
+    assert "    also: deletes 2 connection profile(s)" in text
     assert "    also: disconnects 1 active session(s)" in text
     assert "    also: cannot be undone" in text
     item = only(result)
@@ -1445,7 +1445,7 @@ async def test_a_group_change_reaches_the_group_and_is_previewed(
     text = seen[0]
     assert "Action: Update group (1 item)" in text
     assert "    totp: false -> true" in text
-    assert "allow_password_change: false -> inherited (server-wide value: True)" in text
+    assert "allow_password_change: false -> inherited (server-wide value: true)" in text
     assert "also: applies to every member that does not set the value itself" in text
     item = only(result)
     assert item["outcome"] == "done" and item["after"]["own"] == ["totp"]
@@ -1535,7 +1535,7 @@ async def test_a_reset_of_a_group_block_to_a_blocking_server_value_names_the_mem
     result = await server.call(
         "update_group", {"name": "staff", "reset_to_inherited": ["deny"]}, seen=seen
     )
-    assert "deny: false -> inherited (server-wide value: True)" in seen[0]
+    assert "deny: false -> inherited (server-wide value: true)" in seen[0]
     assert only(result)["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
 
 

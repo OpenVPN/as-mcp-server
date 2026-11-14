@@ -49,6 +49,7 @@ DOCUMENTED_SECRET_KEYS = {
     "mfa_secret",
     "pvt_google_auth_secret",
     "password",
+    "new_password",
     "auth_token",
     "subkey",
     "challenge_context",

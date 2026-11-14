@@ -224,8 +224,8 @@ async def test_every_field_of_a_user_is_set_read_back_and_reset(scratch, mode) -
     (item,) = result["items"]
     assert item["outcome"] == "done", item
     # What the preview promised is what the server shows afterwards.
-    assert "totp: true -> inherited (server-wide value: False)" in seen[0]
-    assert "reroute_gw: dns_only -> inherited (server-wide value: True)" in seen[0]
+    assert "totp: true -> inherited (server-wide value: false)" in seen[0]
+    assert "reroute_gw: dns_only -> inherited (server-wide value: true)" in seen[0]
     assert "auth_method: pam -> inherited (server-wide value: local)" in seen[0]
     assert item["after"]["own"] == []
     assert values(await scratch.user_record(name)) == SERVER_VALUES
@@ -350,7 +350,7 @@ async def test_a_group_lives_from_create_to_delete(scratch, mode) -> None:
     )
     (item,) = updated["items"]
     assert item["outcome"] == "done", item
-    assert "totp: true -> inherited (server-wide value: False)" in seen[0]
+    assert "totp: true -> inherited (server-wide value: false)" in seen[0]
     assert item["after"]["totp"] is False and item["after"]["reroute_gw"] == "disable"
     member = await scratch.user_record(name)
     assert member["totp"]["value"] is False

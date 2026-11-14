@@ -205,7 +205,9 @@ async def test_a_download_link_is_saved_with_its_expiry_and_never_returned(
     assert "://" not in json.dumps(result)
     assert "import-profile" not in (live.tmp_path / "audit.jsonl").read_text("utf-8")
     assert await live.profiles(SCRATCH) == []  # a link alone creates no profile
-    with pytest.raises(ToolError, match="at most 168 hours and 5 uses"):
+    with pytest.raises(
+        ToolError, match=r"at most 604800 seconds \(168 hours\) and 5 uses"
+    ):
         await live.call(
             "create_profile_download_link",
             {"usernames": [SCRATCH], "lifetime_seconds": 604801},

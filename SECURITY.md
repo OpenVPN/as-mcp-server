@@ -8,7 +8,7 @@ administrator's own Access Server credentials, started by the agent over stdio. 
 network listener and no other user. The password lives in the OS keyring (or, by choice, in
 the agent's configuration file); a session token lives in process memory only. Anything the
 model is shown, it may send to its provider: tool responses are redacted for known secret
-keys (`totp_secret`, `mfa_secret`, `pvt_google_auth_secret`, `password`, `auth_token`,
+keys (`totp_secret`, `mfa_secret`, `pvt_google_auth_secret`, `password`, `new_password`, `auth_token`,
 `subkey`, `challenge_context`) and, in `get_status_overview`, for configuration values whose key name looks like
 a secret (`*secret*`, `*password*`, `*passwd*`, `*bind_pw*`, `*token*`, `*_key`, `*.key`,
 `subscription.bundle`, `subscription.saved_state`; a trailing version or index such as

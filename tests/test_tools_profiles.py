@@ -497,16 +497,16 @@ async def test_the_link_appears_in_no_result_preview_audit_line_or_log(
         "Action: Create a userlogin profile download link (2 items)\n"
         "\n"
         "- alice\n"
-        "    download link: (not set) -> valid until 2026-11-14T12:00:00+00:00, "
+        "    download link: (not set) -> valid until about 2026-11-14T12:00:00+00:00, "
         "1 use(s)\n"
-        "    also: cannot be revoked, valid until 2026-11-14T12:00:00+00:00, 1 "
+        "    also: cannot be revoked, valid until about 2026-11-14T12:00:00+00:00, 1 "
         "use(s); blocking the user later does not stop the link; profiles already "
         "downloaded through it can be deleted\n"
         f"    also: the link is saved to a file in {server.out}\n"
         "- bob\n"
-        "    download link: (not set) -> valid until 2026-11-14T12:00:00+00:00, "
+        "    download link: (not set) -> valid until about 2026-11-14T12:00:00+00:00, "
         "1 use(s)\n"
-        "    also: cannot be revoked, valid until 2026-11-14T12:00:00+00:00, 1 "
+        "    also: cannot be revoked, valid until about 2026-11-14T12:00:00+00:00, 1 "
         "use(s); blocking the user later does not stop the link; profiles already "
         "downloaded through it can be deleted\n"
         f"    also: the link is saved to a file in {server.out}"
@@ -563,8 +563,9 @@ async def test_a_link_above_the_hard_limit_is_refused(
         )
     article = "an" if kind == "autologin" else "a"
     assert str(refused.value) == (
-        f"Refused: {article} {kind} link may be valid for at most {hours} hours "
-        "and 5 uses."
+        f"Refused: {article} {kind} link may be valid for at most {hours * 3600} "
+        f"seconds ({hours} hours) and 5 uses; this call asked for {lifetime} "
+        f"seconds and {usages} use(s). Nothing was created."
     )
     assert server.sent(TOKEN_URL) == []
 

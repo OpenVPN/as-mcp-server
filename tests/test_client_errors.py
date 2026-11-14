@@ -6,7 +6,11 @@ import httpx
 import pytest
 from fastmcp.exceptions import ToolError
 
-from as_mcp_server.client import AccessServerClient, RequestTimeoutError
+from as_mcp_server.client import (
+    AccessServerClient,
+    NotFoundError,
+    RequestTimeoutError,
+)
 from tests.conftest import (
     LOGIN,
     MFAAUTH,
@@ -86,6 +90,19 @@ async def test_a_404_explains_the_minimum_version() -> None:
     ) as exc_info:
         await client.post("/access/policysets/list", {})
     assert "Access Server 3.1 or newer" in str(exc_info.value)
+
+
+async def test_a_404_about_an_object_quotes_the_server_and_blames_no_version() -> None:
+    client, _ = client_with(
+        {("POST", "/api/users/delete"): load_fixture("error_users_delete_404")}
+    )
+    with pytest.raises(NotFoundError) as error:
+        await client.post("/users/delete", {"users": ["fixture-user"]})
+    assert str(error.value) == (
+        "Access Server did not find what POST /users/delete names (404): ConfigDB: "
+        "profile 'fixture-user' not found"
+    )
+    assert "Web API" not in str(error.value)
 
 
 async def test_a_5xx_is_reported_with_status_and_reason() -> None:

@@ -34,6 +34,7 @@ from as_mcp_server.writes import (
     DESTRUCTIVE,
     MAX_ITEMS,
     NOTE_LIVE,
+    RESULT_HELP,
     Own,
     Partial,
     Plan,
@@ -189,10 +190,19 @@ async def disconnect(
         body["clients"] = [
             {"daemon_id": session.daemon_id, "client_id": session.client_id}
         ]
+    started = None
+    if user is not None:
+        # A client that reconnects while we wait is not the session that was asked
+        # for: remember which ones were.
+        started = [
+            str(s.get("connected_since"))
+            for s in await _connected(client)
+            if s.get("username") == user
+        ]
     try:
         await client.post("/vpn/client/disconnect", body)
     except NotFoundError as exc:
-        if await still_connected(client, user=user, session=session):
+        if await still_connected(client, user=user, session=session, started=started):
             raise ToolError(
                 "Access Server did not find the session to disconnect (404), but "
                 "still lists it as connected."
@@ -305,7 +315,8 @@ class _Disconnect:
         if not sessions and item.user is not None:
             raise ToolError(
                 f"{clean(item.user)} has no active VPN session on this Access "
-                "Server (names are case-sensitive)."
+                "Server (names are case-sensitive). Nothing was disconnected; call "
+                "again without this name."
             )
         if not sessions:
             raise ToolError(
@@ -386,7 +397,7 @@ def register_session_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "To unblock, call update_user with deny=false. The account this "
             "server signs in with cannot be blocked. Each item of 'items': "
             "outcome, disconnected (number of sessions) and a note on download "
-            "links."
+            "links." + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},
@@ -418,7 +429,7 @@ def register_session_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "user out, use block_user instead. The VPN client is shown the fixed "
             'text "Disconnected by your administrator." Find sessions with '
             "get_active_vpn_connections. Each item of 'items': outcome and "
-            "disconnected (number of sessions)."
+            "disconnected (number of sessions)." + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},
@@ -431,7 +442,9 @@ def register_session_tools(mcp: FastMCP, deps: WriteDeps) -> None:
                 description=(
                     "Exact, case-sensitive usernames, up to 100: every running "
                     "session of each is disconnected. A name without a running "
-                    "session refuses the whole call. Omit when sessions is given."
+                    "session refuses the whole call. A session whose username "
+                    "get_active_vpn_connections shows as withheld cannot be named "
+                    "here: pass it in sessions. Omit when sessions is given."
                 )
             ),
         ] = None,

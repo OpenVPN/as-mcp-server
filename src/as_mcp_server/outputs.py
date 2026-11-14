@@ -16,6 +16,7 @@ from fastmcp.exceptions import ToolError
 Kind = Literal["profile", "download-link", "password", "support-report"]
 DELIVERY_REMINDER = "Delete the file once it has been delivered."
 MAX_NAME = 64
+MAX_NAME_BYTES = 160
 # How many files with the same time, kind and name are told apart by a number.
 MAX_SAME_NAME = 1000
 _NO_FOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -66,7 +67,11 @@ def probe_output_dir(directory: Path) -> None:
 def safe_component(name: str) -> str:
     """`name` as one path component: letters, digits, `.`, `_` and `-` only."""
     cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)
-    return cleaned.lstrip(".")[:MAX_NAME] or "unnamed"
+    cleaned = cleaned.lstrip(".")[:MAX_NAME]
+    # A file name is limited in bytes (255 on most file systems), not in characters.
+    while len(cleaned.encode("utf-8")) > MAX_NAME_BYTES:
+        cleaned = cleaned[:-1]
+    return cleaned or "unnamed"
 
 
 def write_secret_file(
