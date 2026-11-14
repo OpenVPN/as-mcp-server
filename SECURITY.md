@@ -45,8 +45,11 @@ groups, connection profiles and sessions. What protects the server then:
   administrator trusts. It is limited in code: no administrator rights are given, MFA is not
   switched off, no authentication method is changed, autologin is not switched on, no
   autologin profile or link is created, and a change whose result cannot be computed is
-  refused. Everything else, including deletes and blocks, is done without a question. Do not
-  combine `auto` with an agent that reads untrusted text.
+  refused. Everything else, including deletes and blocks, is done without a question. That
+  has a consequence: deleting a group takes from its members what they inherited from it,
+  also MFA, an authentication method or a block, and deleting a user and creating it again
+  gives a user without the old MFA enrollment. Do not combine `auto` with an agent that
+  reads untrusted text.
 - **The account the server signs in with cannot be locked out** in either mode: not blocked,
   deleted, demoted, moved or switched to another authentication method, also not through its
   group.
@@ -63,15 +66,22 @@ groups, connection profiles and sessions. What protects the server then:
   (24 hours for an autologin link) and is refused for autologin in `auto`. Blocking the user
   afterwards does not stop an unused link; the profile it returns cannot connect while the
   user is blocked.
-- **Every attempt is recorded.** `<config dir>/audit.jsonl` (file `0600`) gets one line per
-  item for every write attempt, also refused and cancelled ones: time, tool, target, outcome,
-  approval mode, server, administrator, state before and after. Known secret keys are
-  redacted. When the line cannot be written before the change, the change is not made. The
-  file is local, is not rotated and is not protected against the user who owns it.
+- **Every change is recorded.** `<config dir>/audit.jsonl` (file `0600`) gets one line per
+  item for every change the server tried, refused or saw cancelled, also when the tool call
+  is interrupted while the change is being written: time, tool, target, outcome, approval
+  mode, server, administrator, state before and after. Known secret keys are redacted. When
+  the line cannot be written before the change, the change is not made. Not recorded: a call
+  turned down for its arguments alone, before any check (nothing was read or written), and
+  `create_support_report`, which changes nothing. The file is local, is not rotated and is
+  not protected against the user who owns it.
 - **The server never repeats a write.** A request that times out is reported with the state
   read afterwards, and later items of the same list are not attempted.
 
 Known gaps: a VPN session that connected in the last few seconds is not yet listed by Access
 Server, so a block or a delete at that moment does not see it; blocking a group or moving a
 user into a blocked group does not disconnect running sessions (the tools name them); an
-Access Server version newer than the tested ones is allowed with a warning.
+Access Server version newer than the tested ones is allowed with a warning; switching MFA on
+for the account the server signs in with is allowed, and the next sign-in then needs a
+person; the approval text is plain text, and an app that renders it as Markdown or HTML may
+show a crafted name differently from what was written (a name that holds invisible
+characters or is cut is marked as such).

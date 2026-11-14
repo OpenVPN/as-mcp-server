@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 import pytest
 from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 
 from as_mcp_server import approval, tools_sessions, tools_users
@@ -958,9 +959,8 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
     assert "    deny: false -> true" in seen[0]
     alice, carol = result["items"]
     assert alice["outcome"] == "done" and alice["warnings"] == [line]
-    assert alice["before"]["sessions"] == [
-        {"daemon_id": "openvpn_1", "client_id": 0, "username": "alice"}
-    ]
+    # Sessions come and go by themselves: they are not part of the approved state.
+    assert "sessions" not in alice["before"]
     assert "warnings" not in carol  # blocked too, but has no session
     assert MSG_NOT_DISCONNECTED.format(name="carol") not in seen[0]
     assert server.sent(DISCONNECT) == []  # update_user never disconnects
@@ -990,18 +990,66 @@ async def test_resetting_deny_to_an_inherited_true_names_the_connected_user(
     assert server.value("bob", "deny") is True
 
 
-async def test_a_session_that_begins_during_the_prompt_is_a_changed_state(
+async def test_a_session_that_begins_during_the_prompt_is_named_after_the_write(
     tmp_path: Path,
 ) -> None:
     server = FakeServer(tmp_path)
-    with pytest.raises(ToolError) as error:
-        await approve_after(
-            server,
-            lambda: server.connect("alice"),
-            "update_user",
-            {"usernames": ["alice"], "group": "blocked"},
-        )
-    assert str(error.value) == MSG_CHANGED and server.sent(SET) == []
+    result = await approve_after(
+        server,
+        lambda: server.connect("alice"),
+        "update_user",
+        {"usernames": ["alice"], "group": "blocked"},
+    )
+    item = only(result)
+    assert item["outcome"] == "done"
+    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
+
+
+async def test_a_session_that_ended_during_the_prompt_is_no_longer_named(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    seen: list[str] = []
+
+    async def handler(message, response_type, params, context):
+        seen.append(message)
+        server.sessions.clear()
+        fields = params.requested_schema.get("properties", {})
+        return ElicitResult(action="accept", content=dict.fromkeys(fields, True))
+
+    async with Client(server.mcp, mode="legacy", elicitation_handler=handler) as client:
+        result = (
+            await client.call_tool(
+                "update_user", {"usernames": ["alice"], "group": "blocked"}
+            )
+        ).structured_content
+    assert MSG_NOT_DISCONNECTED.format(name="alice") in seen[0]
+    assert only(result)["outcome"] == "done" and "warnings" not in only(result)
+
+
+async def test_warnings_fall_back_to_the_preview_when_sessions_cannot_be_read_again(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    status = ("GET", f"{P}/vpn/status")
+    good = server.router.routes[status][0]
+    answers = iter([good, good])  # the read before the prompt and the re-read
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        handler = next(answers, None)
+        if handler is None:
+            return httpx.Response(500, json={"reason": "busy"})
+        return handler(request)
+
+    server.router.routes[status] = [flaky]
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "group": "blocked"}
+    )
+    item = only(result)
+    assert item["outcome"] == "done"
+    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
 
 
 async def test_a_group_that_changes_during_the_prompt_is_a_changed_state(
@@ -1446,7 +1494,10 @@ async def test_a_group_change_reaches_the_group_and_is_previewed(
     assert "Action: Update group (1 item)" in text
     assert "    totp: false -> true" in text
     assert "allow_password_change: false -> inherited (server-wide value: true)" in text
-    assert "also: applies to every member that does not set the value itself" in text
+    assert (
+        "also: the group has 1 member(s); the change applies to each one that does "
+        "not set the value itself" in text
+    )
     item = only(result)
     assert item["outcome"] == "done" and item["after"]["own"] == ["totp"]
     assert server.value("alice", "totp") is True  # the member follows
@@ -1506,10 +1557,8 @@ async def test_a_group_block_names_only_connected_members_that_inherit_it(
         assert MSG_NOT_DISCONNECTED.format(name=other) not in seen[0]
     item = only(result)
     assert item["outcome"] == "done" and item["warnings"] == [line]
-    assert item["before"]["member_sessions"] == [
-        {"daemon_id": "openvpn_1", "client_id": 0, "username": "alice"},
-        {"daemon_id": "openvpn_1", "client_id": 1, "username": "bob"},
-    ]
+    assert "member_sessions" not in item["before"]
+    assert "also: the group has 3 member(s)" in seen[0]
     assert server.sent(DISCONNECT) == []
     assert len(server.sessions) == 3
 
@@ -1519,7 +1568,7 @@ async def test_a_group_change_that_cannot_block_reads_no_sessions(
 ) -> None:
     server = FakeServer(tmp_path)
     result = await server.call("update_group", {"name": "staff", "deny": False})
-    assert "member_sessions" not in only(result)["before"]
+    assert "warnings" not in only(result)
     assert server.router.sent("GET", f"{P}/vpn/status") == []
 
 
@@ -1661,3 +1710,161 @@ async def test_the_user_and_group_tools_exist_only_in_write_mode(
     async with Client(read_only) as client:
         names = {tool.name for tool in await client.list_tools()}
     assert not names & set(tools_users.TOOLS)
+
+
+# --- found by the reviews -----------------------------------------------------------
+
+
+async def test_a_new_user_may_differ_from_the_own_account_only_in_letter_case(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    result = await server.call(
+        "create_user", {"users": [{"username": "OpenVPN"}]}, seen=seen
+    )
+    assert only(result)["outcome"] == "done" and "OpenVPN" in server.users
+    assert "a user named openvpn exists already" in seen[0]
+
+
+async def test_a_new_user_preview_shows_what_the_group_gives(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.groups["staff"]["own"].update(autologin=True, deny_web=True)
+    seen: list[str] = []
+    await server.call(
+        "create_user", {"users": [{"username": "dave", "group": "staff"}]}, seen=seen
+    )
+    assert "    autologin: (not set) -> true" in seen[0]
+    assert "    deny_web: (not set) -> true" in seen[0]
+
+
+@pytest.mark.parametrize(
+    "name", ["da  ve", "dave" + chr(0x3164), "dave" + chr(0x200B), "dave" + chr(0xFE0F)]
+)
+async def test_a_new_name_that_would_not_be_shown_as_it_is_is_refused(
+    tmp_path: Path, name: str
+) -> None:
+    server = FakeServer(tmp_path)
+    for tool, args in (
+        ("create_user", {"users": [{"username": name}]}),
+        ("create_group", {"name": name}),
+    ):
+        with pytest.raises(ToolError, match="invisible character"):
+            await server.call(tool, args)
+    assert server.written() == []
+
+
+async def test_a_group_that_users_already_point_at_is_not_created(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["bob"]["group"] = "ops"
+    server.users["openvpn"]["group"] = "ops"
+    with pytest.raises(ToolError) as error:
+        await server.call("create_group", {"name": "ops", "deny": True})
+    assert str(error.value) == (
+        "Refused: 2 user(s) already have ops as their group although no such group "
+        "exists (bob, openvpn); creating it would change these users at once. "
+        "Nothing was changed."
+    )
+    assert server.written() == []
+
+
+async def test_a_password_the_server_did_not_keep_leaves_no_file_behind(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.fail[PASSWORD] = captured("password_change_ok")  # says yes, stores nothing
+    result = await server.call(
+        "create_user", {"users": [{"username": "dave", "generate_password": True}]}
+    )
+    item = only(result)
+    assert item["outcome"] == "partial"
+    assert "the password was not set" in item["detail"]
+    assert "the password file was removed" in item["detail"]
+    assert item["path"] is None and item["reminder"] is None
+    assert server.files() == []
+
+
+async def test_a_delete_that_times_out_after_the_profiles_says_what_is_not_known(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    server.fail[DELETE] = httpx.ReadTimeout("slow")
+    result = await server.call("delete_user", {"usernames": ["alice", "bob"]})
+    alice, bob = result["items"]
+    assert alice["outcome"] == "partial"
+    assert "It is not known whether the user was deleted" in alice["detail"]
+    assert "disconnect_vpn_sessions" in alice["detail"]
+    assert alice["detail"].endswith("(done: connection profiles deleted)")
+    assert bob["outcome"] == "not attempted"
+    assert len(server.sent(DELETE)) == 1 and server.sent(DISCONNECT) == []
+
+
+async def test_an_update_whose_write_times_out_is_not_sent_again(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.fail[SET] = httpx.ReadTimeout("slow")
+    result = await server.call(
+        "update_user", {"usernames": ["alice", "bob"], "totp": True}
+    )
+    first, second = result["items"]
+    assert first["outcome"] == "unknown_after_timeout"
+    assert "not repeated" in first["detail"]
+    assert second["outcome"] == "not attempted"
+    assert len(server.sent(SET)) == 1
+    assert [line["outcome"] for line in server.audit()] == ["unknown_after_timeout"]
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("update_user", {"usernames": ["alice", "ALICE"], "totp": True}),
+        ("delete_user", {"usernames": ["bob", "Bob"]}),
+        ("create_user", {"users": [{"username": "dave"}, {"username": "DAVE"}]}),
+    ],
+)
+async def test_one_name_in_two_letter_cases_is_a_duplicate(
+    tmp_path: Path, tool: str, args: dict
+) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError, match="is in the list twice"):
+        await server.call(tool, args)
+    assert server.written() == []
+
+
+async def test_the_own_group_is_recognised_in_any_letter_case(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.users["openvpn"]["group"] = "Staff"
+    with pytest.raises(ToolError) as error:
+        await server.call("update_group", {"name": "staff", "deny": True})
+    assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert server.written() == []
+
+
+async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
+    tmp_path: Path,
+) -> None:
+    async with Client(FakeServer(tmp_path).mcp) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+    flow = [
+        name
+        for name, tool in tools.items()
+        if tool.annotations.read_only_hint is False and name != "login"
+    ]
+    assert len(flow) == 11
+    for name in flow:
+        description = tools[name].description
+        assert "unknown_after_timeout" in description, name
+        assert "never repeat an item" in description, name
+        assert "relay 'notes'" in description, name
+    for name in ("create_connection_profile", "create_profile_download_link"):
+        assert "Do not open, copy, send or delete the saved file" in (
+            tools[name].description
+        )
+    assert "Do not open, copy, send or delete" in tools["create_user"].description
+    assert "never delete and create a user again" in tools["create_user"].description
+    assert "reset_to_inherited" in tools["update_user"].description
+    assert "deny is not the lockout" in tools["update_user"].description

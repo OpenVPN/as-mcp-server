@@ -16,6 +16,7 @@ from as_mcp_server.outputs import (
     DELIVERY_REMINDER,
     OutputError,
     probe_output_dir,
+    safe_component,
     write_secret_file,
 )
 
@@ -226,3 +227,13 @@ def test_an_output_error_reaches_the_agent_as_a_tool_error() -> None:
 
 def test_the_reminder_text_is_fixed() -> None:
     assert DELIVERY_REMINDER == "Delete the file once it has been delivered."
+
+
+def test_a_long_name_in_a_wide_alphabet_still_fits_a_file_name(tmp_path: Path) -> None:
+    name = chr(0x1F600) * 64  # four bytes each: 256 bytes, more than a file name holds
+    assert len(name) == 64
+    component = safe_component(chr(0x4E2D) * 64)
+    assert len(component.encode("utf-8")) <= 160 and component
+    path = write_secret_file(tmp_path, "profile", chr(0x4E2D) * 64, "ovpn", "x")
+    assert len(path.name.encode("utf-8")) < 255 and path.read_text() == "x"
+    assert safe_component(name) == "_" * 64

@@ -4,6 +4,7 @@ including its habit of listing a session for a few seconds after it ended."""
 from __future__ import annotations
 
 import json
+import logging
 import re
 import stat
 import sys
@@ -652,6 +653,88 @@ async def test_a_client_that_reconnects_at_once_is_not_a_failed_disconnect(
     server.router.routes[DISCONNECT] = [disconnect_then_reconnect]
     result = await server.call("disconnect_vpn_sessions", {"usernames": ["bob"]})
     assert result["items"][0]["outcome"] == "done"
+
+
+async def test_a_ghost_session_and_a_client_that_reconnects_is_not_a_failure(
+    tmp_path: Path,
+) -> None:
+    """The only listed session ended a moment ago (404), and the client is back
+    before the list settles: the new session is not the one that was asked for."""
+    server = FakeServer(tmp_path)
+    server.lag = 2
+    server.end("bob")
+    original = server._disconnect
+
+    def missing_then_reconnect(request: httpx.Request) -> httpx.Response:
+        answer = original(request)
+        again = session("bob", "openvpn_1", 7)
+        server.sessions.append({**again, "connected_since": "2026-11-14T11:11:11Z"})
+        return answer
+
+    server.router.routes[DISCONNECT] = [missing_then_reconnect]
+    result = await server.call("disconnect_vpn_sessions", {"usernames": ["bob"]})
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert server.connected("bob") == 1
+
+
+async def test_a_block_whose_write_times_out_is_not_sent_again(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow")
+
+    server.router.routes[SET] = [slow]
+    result = await server.call("block_user", {"usernames": ["alice", "bob"]})
+    first, second = result["items"]
+    assert first["outcome"] == "unknown_after_timeout"
+    assert "not repeated" in first["detail"]
+    assert second["outcome"] == "not attempted"
+    assert len(server.router.sent(*SET)) == 1
+    assert server.sent(DISCONNECT) == []
+
+
+async def test_a_block_that_arrived_but_timed_out_says_the_user_is_still_connected(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    original = server._set
+
+    def applied_but_slow(request: httpx.Request) -> httpx.Response:
+        original(request)
+        raise httpx.ReadTimeout("slow")
+
+    server.router.routes[SET] = [applied_but_slow]
+    result = await server.call("block_user", {"usernames": ["bob"]})
+    (item,) = result["items"]
+    assert item["outcome"] == "unknown_after_timeout"
+    assert item["detail"].endswith(f"Read afterwards: {MSG_STILL_CONNECTED}.")
+    assert item["after"]["deny"] is True and len(item["after"]["sessions"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("block_user", {"usernames": ["bob", "BOB"]}),
+        ("disconnect_vpn_sessions", {"usernames": ["alice", "Alice"]}),
+    ],
+)
+async def test_one_name_in_two_letter_cases_is_a_duplicate(
+    tmp_path: Path, tool: str, args: dict
+) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError, match="is in the list twice"):
+        await server.call(tool, args)
+    assert server.router.sent(*SET) == [] and server.sent(DISCONNECT) == []
+
+
+async def test_the_support_report_never_reaches_the_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = report_server(tmp_path)
+    with caplog.at_level(logging.DEBUG):
+        await server.call("create_support_report", {})
+    assert "MARKER" not in caplog.text and "Support summary" not in caplog.text
 
 
 async def test_a_session_that_ends_during_the_prompt_refuses_the_disconnect(

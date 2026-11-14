@@ -217,3 +217,12 @@ def test_newly_denied_keeps_the_order_of_the_effects() -> None:
     denied = {**PLAIN, "deny": True}
     effects = [Effect("user", name, PLAIN, denied) for name in ("zoe", "adam", "mia")]
     assert newly_denied(effects) == ["zoe", "adam", "mia"]
+
+
+def test_a_new_user_is_never_the_own_account_whatever_its_letter_case() -> None:
+    created = Effect("user", "OpenVPN", None, {**PLAIN})
+    assert lockout_reason("openvpn", None, [created]) is None
+    blocked = Effect("user", "OPENVPN", None, {**PLAIN, "deny": True})
+    assert lockout_reason("openvpn", None, [blocked]) is None
+    # The account itself is still protected next to it.
+    assert lockout_reason("openvpn", None, [created, *own(deny=True)])

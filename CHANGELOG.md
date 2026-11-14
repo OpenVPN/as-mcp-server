@@ -12,8 +12,8 @@ and sessions. It is off by default, and every change is shown for approval first
 
 ### Added
 - Setting `OPENVPN_AS_WRITE_TOOLS` (default `false`): `true` registers twelve more tools.
-  `OPENVPN_AS_APPROVAL` (`prompt` or `auto`) and `OPENVPN_AS_OUTPUT_DIR`. All three are shown
-  by `connection_info` and `as-mcp-server check`.
+  `OPENVPN_AS_APPROVAL` (`prompt` or `auto`) and `OPENVPN_AS_OUTPUT_DIR`. The first two are
+  shown by `connection_info` and `as-mcp-server check`.
 - The approval question: before a change is written the server shows the server, the action,
   every target with `before -> after` and the side effects, and asks through MCP elicitation.
   The answer is bound to the call and to the state that was shown; a changed state is read
@@ -49,7 +49,10 @@ and sessions. It is off by default, and every change is shown for approval first
   asks no approval; the request may take up to 5 minutes.
 - List calls: up to 100 items with one approval, every item checked before anything is
   written, a result per item, nothing repeated after a timeout.
-- An audit log, `<config dir>/audit.jsonl`: one line per item for every write attempt.
+- An audit log, `<config dir>/audit.jsonl`: one line per item for every change the server
+  tried, refused or saw cancelled.
+- A 404 that names a missing object quotes Access Server instead of pointing at the server
+  version.
 - Two read tools, always on: `list_connection_profiles` (who holds which connection profile;
   never the profile file or its key; serials are strings of digits) and `list_access_lists`
   (IPv4 access lists of users and groups, with a note that the global IP/subnet rules and

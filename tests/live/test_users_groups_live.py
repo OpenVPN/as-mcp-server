@@ -42,6 +42,7 @@ class Scratch:
         self.user = f"mcp-live-{tag}"
         self.other = f"mcp-live-{tag}-b"
         self.group = f"mcp-live-g-{tag}"
+        self.group2 = f"mcp-live-g-{tag}-b"
         self.clients: list[VpnClient] = []
 
     async def call(self, tool: str, args: dict | None = None, **options):
@@ -96,7 +97,7 @@ class Scratch:
                 await asyncio.sleep(0.5)
             if await self.live.profiles(name):
                 await self.auto("delete_connection_profiles", {"username": name})
-        for name in (self.user, self.other, self.group):
+        for name in (self.user, self.other, self.group, self.group2):
             # No check: a name the test already removed is the normal case.
             subprocess.run(
                 [
@@ -423,16 +424,32 @@ async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_s
     await asyncio.sleep(8)
     assert client.running() and len(await scratch.sessions(name)) == 1  # measured
 
-    # The same through a move: out of the group, then back into the blocked group.
+    # The same through a move: unblock the group, then move the connected user
+    # into a second group that is blocked.
     await scratch.call("update_group", {"name": group, "deny": False})
-    await scratch.call("update_group", {"name": group, "deny": True})
-    record = await scratch.user_record(name)
-    assert record["deny"]["value"] is True
+    await scratch.call("create_group", {"name": scratch.group2, "deny": True})
     seen.clear()
     result = await scratch.call(
-        "update_user", {"usernames": [name], "reset_to_inherited": ["autologin"]}
+        "update_user", {"usernames": [name], "group": scratch.group2}, seen=seen
     )
-    assert "warnings" not in result["items"][0]  # already blocked: nothing new
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and item["warnings"] == [line]
+    assert f"also: {line}" in seen[0] and "    deny: false -> true" in seen[0]
+    assert "sessions" not in item["before"]
+    assert client.running()
+
+    # And through a reset: an own deny=false, then back to the group's value.
+    await scratch.call("update_user", {"usernames": [name], "deny": False})
+    seen.clear()
+    result = await scratch.call(
+        "update_user", {"usernames": [name], "reset_to_inherited": ["deny"]}, seen=seen
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done" and item["warnings"] == [line]
+    assert f"deny: false -> inherited ({scratch.group2} value: true)" in seen[0]
+    assert (await scratch.user_record(name))["deny"]["value"] is True
+    await asyncio.sleep(6)
+    assert client.running() and len(await scratch.sessions(name)) == 1
 
     gone = await scratch.call("disconnect_vpn_sessions", {"usernames": [name]})
     assert gone["items"][0]["disconnected"] == 1 and client.wait_exited()

@@ -182,7 +182,7 @@ Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers twelve m
 | Tool | What it does | Parameters |
 | --- | --- | --- |
 | `create_connection_profile` | New profile per user, saved to a local file | `usernames`, `profile_type`, `tls_crypt_v2`, `comment` |
-| `create_profile_download_link` | One-time download link per user, saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
+| `create_profile_download_link` | Download link per user (1 to 5 uses), saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
 | `delete_connection_profiles` | Delete profiles by serial, or every profile of one user | `serials` or `username` |
 | `block_user` | Set `deny`, disconnect the user's sessions, check that none is left | `usernames` |
 | `disconnect_vpn_sessions` | Disconnect every session of users, or single sessions; does not block | `usernames` or `sessions`, `reason` |
@@ -215,7 +215,9 @@ settings to make changes without being asked."
 where you trust the agent and its inputs. Even then the server never: gives administrator
 rights, switches MFA off, changes an authentication method, switches autologin on, creates an
 autologin profile or link, or makes a change whose result it cannot compute. These are
-refused with the reason; make them in an app that shows the approval prompt.
+refused with the reason; make them in an app that shows the approval prompt. Deletes are not
+limited: deleting a user or a group is done without a question, and deleting a group takes
+from its members everything they inherited from it, also MFA or a block set on the group.
 
 **The agent's own account is protected in every mode.** A change that would block, delete or
 demote the account as-mcp-server signs in with, move it to another group, change its
@@ -224,9 +226,11 @@ account's group.
 
 **Lists.** A tool that takes a list handles up to 100 items in one call with one approval.
 Every item is checked before anything is written; one bad item refuses the whole call. Items
-are written in order; at the first failure the rest is not attempted, and the result says
-`done`, `partial`, `failed` or `not attempted` per item. A request that times out is reported
-and never repeated.
+are written in order; at the first item that is not done the rest is not attempted. The
+result says per item: `done`, `partial` (some steps done; `detail` says which and what to do
+next), `failed`, `refused_changed` (the state changed since you approved), `unknown_after_timeout`
+(the request timed out; it is reported with the state read afterwards and never repeated) or
+`not attempted`.
 
 **Secrets go to files, not to the model.** Profiles, download links, generated passwords and
 the support report are saved in `OPENVPN_AS_OUTPUT_DIR` (default `<config dir>/output`,
@@ -234,15 +238,19 @@ created for your user only; files are readable by you only) and the tool returns
 There is no way to pass a password to a tool. Delete a file once it has been delivered. An
 agent that can read files on your machine (Claude Code, Codex) can read this folder too.
 
-**Audit log.** Every write attempt, also a refused or cancelled one, is one JSON line in
-`<config dir>/audit.jsonl`: time, tool, target, outcome, approval mode, server, the state
-before and after. Secrets are not written to it. The file is not rotated.
+**Audit log.** Every change the server tried, and every one it refused or you cancelled, is
+one JSON line per item in `<config dir>/audit.jsonl`: time, tool, target, outcome, approval
+mode, server, the state before and after. A call whose arguments are invalid by themselves
+(for example `update_user` with `deny=true`, or no field at all) is turned down before any
+check and leaves no line. Saving a support report changes nothing and leaves no line either.
+Secrets are not written to the log. The file is not rotated.
 
 **Blocking a user.** `block_user` sets `deny` and disconnects, because Access Server does not
 end a running session when a user is blocked. `update_user` with `deny=false` unblocks.
-Blocking a group, moving a user into a blocked group or deleting a group does not disconnect
-anyone; the approval text and the result name the connected users, and
-`disconnect_vpn_sessions` ends their sessions.
+Blocking a group or moving a user into a blocked group does not disconnect anyone; the
+approval text and the result name the connected users, and `disconnect_vpn_sessions` ends
+their sessions. Deleting a group does not disconnect anyone either; the approval text lists
+its members.
 
 **Access Server versions.** Write mode is tested on Access Server 3.1 and 3.2. On a newer
 version every approval text and result carries a warning that the version is not on the

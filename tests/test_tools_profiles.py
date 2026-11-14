@@ -375,6 +375,27 @@ async def test_a_read_only_folder_is_noticed_before_anything_is_created(
     assert server.sent(CREATE) == []
 
 
+async def test_no_link_is_created_when_it_could_not_be_saved(tmp_path: Path) -> None:
+    """A link cannot be revoked, so the folder is tried before the server is asked."""
+    server = FakeServer(tmp_path)
+    server.out.mkdir()
+    server.out.chmod(0o500)
+    try:
+        with pytest.raises(ToolError, match="Cannot write to the output folder"):
+            await server.call("create_profile_download_link", {"usernames": ["alice"]})
+    finally:
+        server.out.chmod(0o700)
+    assert server.sent(TOKEN_URL) == []
+
+
+async def test_one_user_in_two_letter_cases_is_a_duplicate(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    for tool in ("create_connection_profile", "create_profile_download_link"):
+        with pytest.raises(ToolError, match="is in the list twice"):
+            await server.call(tool, {"usernames": ["alice", "ALICE"]})
+    assert server.sent(CREATE) == [] and server.sent(TOKEN_URL) == []
+
+
 async def test_profiles_for_three_users_need_one_approval(tmp_path: Path) -> None:
     server = FakeServer(tmp_path)
     seen: list[str] = []

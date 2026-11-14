@@ -59,6 +59,8 @@ from as_mcp_server.writes import (
     NOTE_LIVE,
     NOTE_USERPROP_CACHE,
     PAGE_SIZE,
+    RESULT_HELP,
+    SECRET_FILE_HELP,
     WRITE,
     Own,
     Partial,
@@ -307,6 +309,25 @@ def _check_written(
             raise Partial(done, f"Access Server still shows an own value of {name}")
 
 
+async def _warnings_now(
+    client: AccessServerClient,
+    effects: Sequence[Effect],
+    names: Sequence[str],
+    previewed: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Who is blocked by the change that was just written and still connected.
+
+    Read after the write, so a session that began during the approval is named
+    too. Sessions come and go by themselves, which is why they are not part of the
+    state the approval is bound to. When they cannot be read now, the lines of the
+    preview stand."""
+    try:
+        sessions = await sessions_of(client, names)
+    except ToolError:
+        return previewed
+    return not_disconnected(effects, sessions)
+
+
 def _some_names(names: Sequence[str]) -> str:
     """The first names, as many as fit one preview line, then "and <n> more"."""
     listed: list[str] = []
@@ -496,6 +517,8 @@ class _UpdateUser:
     # Per user: the server's record, and the record of the group it will be in.
     _users: dict[str, dict[str, Any]] = field(default_factory=dict)
     _groups: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+    _sessions: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _effects: dict[str, Effect] = field(default_factory=dict)
     _warnings: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def key(self, item: str) -> str:
@@ -525,7 +548,7 @@ class _UpdateUser:
             before["group_state"] = _values(_state(group))
         if self.group is not None or "deny" in self.reset:
             # The change can block the user without disconnecting anyone.
-            before["sessions"] = await sessions_of(client, [item])
+            self._sessions[item] = await sessions_of(client, [item])
         return before
 
     def _after(self, item: str, base: Mapping[str, Any]) -> dict[str, Any]:
@@ -547,8 +570,8 @@ class _UpdateUser:
             before, after, self.changes, self.reset, in_group or "server-wide"
         )
         effect = Effect("user", item, _guarded(before), _guarded(after))
-        warnings = not_disconnected((effect,), before.get("sessions", ()))
-        self._warnings[item] = warnings
+        warnings = not_disconnected((effect,), self._sessions.get(item, ()))
+        self._effects[item], self._warnings[item] = effect, warnings
         return Plan(PreviewItem(item, changes, warnings), (effect,))
 
     async def apply(
@@ -558,6 +581,10 @@ class _UpdateUser:
             "/userprop/set", userprop_body(item, self._written(), self.reset)
         )
         warnings = self._warnings.get(item, ())
+        if item in self._sessions and item in self._effects:
+            warnings = await _warnings_now(
+                client, (self._effects[item],), [item], warnings
+            )
         return {"warnings": list(warnings)} if warnings else {}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
@@ -733,6 +760,8 @@ class _UpdateGroup:
     needs_output_dir: bool = False
     _group: dict[str, Any] | None = None
     _members: list[dict[str, Any]] = field(default_factory=list)
+    _sessions: list[dict[str, Any]] = field(default_factory=list)
+    _member_effects: list[Effect] = field(default_factory=list)
     _warnings: tuple[str, ...] = ()
 
     def key(self, item: str) -> str:
@@ -751,8 +780,8 @@ class _UpdateGroup:
         if self._may_block():
             # Members that inherit the block keep their running sessions.
             self._members = await _members(client, item)
-            names = [member["name"] for member in self._members]
-            before["member_sessions"] = await sessions_of(client, names)
+            names = [str(member["name"]) for member in self._members]
+            self._sessions = await sessions_of(client, names)
         return before
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
@@ -770,12 +799,18 @@ class _UpdateGroup:
         members = [
             self._member_effect(member, after, own.base) for member in self._members
         ]
-        self._warnings = not_disconnected(members, before.get("member_sessions", ()))
-        notes = (
-            "applies to every member that does not set the value itself",
-            *self._warnings,
+        self._member_effects = members
+        self._warnings = not_disconnected(members, self._sessions)
+        count = self._group.get("member_count")
+        reach = (
+            f"the group has {count} member(s); the change applies to each one "
+            "that does not set the value itself"
+            if isinstance(count, int)
+            else "applies to every member that does not set the value itself"
         )
-        return Plan(PreviewItem(item, changes, notes), tuple(effects))
+        return Plan(
+            PreviewItem(item, changes, (reach, *self._warnings)), tuple(effects)
+        )
 
     def _member_effect(
         self, member: Mapping[str, Any], group: Mapping[str, Any], base: Mapping
@@ -790,7 +825,13 @@ class _UpdateGroup:
         await client.post(
             "/userprop/set", userprop_body(item, self.changes, self.reset)
         )
-        return {"warnings": list(self._warnings)} if self._warnings else {}
+        warnings = self._warnings
+        if self._may_block():
+            names = [effect.name for effect in self._member_effects]
+            warnings = await _warnings_now(
+                client, self._member_effects, names, warnings
+            )
+        return {"warnings": list(warnings)} if warnings else {}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
         group = await read_group(client, item)
@@ -857,7 +898,7 @@ Admin = Annotated[
     Field(
         description=(
             "true gives administrator rights (Admin UI and API); switching it on "
-            f"is {_REFUSED_AUTO}. Omit to leave it as it is."
+            f"is {_REFUSED_AUTO}. Omit to write nothing for this field."
         )
     ),
 ]
@@ -866,7 +907,7 @@ DenyWeb = Annotated[
     Field(
         description=(
             "true denies sign-in to the web interface and the API; the VPN is not "
-            "affected. Omit to leave it as it is."
+            "affected. Omit to write nothing for this field."
         )
     ),
 ]
@@ -885,7 +926,7 @@ AuthMethodParam = Annotated[
     Field(
         description=(
             "How to sign in: local, pam, radius, ldap or saml. A change is "
-            f"{_REFUSED_AUTO}. Omit to leave it as it is."
+            f"{_REFUSED_AUTO}. Omit to write nothing for this field."
         )
     ),
 ]
@@ -894,7 +935,7 @@ Totp = Annotated[
     Field(
         description=(
             "true requires TOTP multi-factor authentication. Switching it off is "
-            f"{_REFUSED_AUTO}. Omit to leave it as it is."
+            f"{_REFUSED_AUTO}. Omit to write nothing for this field."
         )
     ),
 ]
@@ -924,7 +965,7 @@ RerouteGwParam = Annotated[
             "the internet traffic; dns_only: only DNS; global: follow the server "
             "setting vpn.client.routing.reroute_gw, which is not the same as "
             '"full tunnel". When read, an inherited value shows as true or false '
-            "and a set one as the word. Omit to leave it as it is."
+            "and a set one as the word. Omit to write nothing for this field."
         )
     ),
 ]
@@ -975,7 +1016,10 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "Creating an administrator is refused in automatic approval mode. "
             "Each item of 'items': outcome, the state after, and path and "
             "reminder when a password was generated. To give the user a "
-            "connection profile, call create_connection_profile afterwards."
+            "connection profile, call create_connection_profile afterwards. An "
+            "existing user cannot get a new password through this server: never "
+            "delete and create a user again to change a password; say that it is "
+            "not supported." + SECRET_FILE_HELP + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1007,7 +1051,14 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "'warnings' in the result name such users. The account this server "
             "signs in with cannot be locked out. Granting administrator rights, "
             "switching MFA off, changing the authentication method and switching "
-            "autologin on are refused in automatic approval mode."
+            "autologin on are refused in automatic approval mode. A false writes "
+            "the user's own false, which then overrides the group and the server; "
+            "to make a user follow the group or the server again use "
+            "reset_to_inherited. A call with deny=true is not run at all: call "
+            "block_user, then update_user for the other fields. This tool cannot "
+            "set a password, reset MFA enrollment, clear a failed-login lockout "
+            "(deny is not the lockout) or take a user out of every group; say so "
+            "instead of trying another tool." + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1029,7 +1080,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             Field(
                 description=(
                     "false unblocks the user. true is refused: use block_user, "
-                    "which also disconnects. Omit to leave it as it is."
+                    "which also disconnects. Omit to write nothing for this field."
                 )
             ),
         ] = None,
@@ -1090,6 +1141,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "account this server signs in with cannot be deleted. To keep a user "
             "but stop their access, call block_user instead. Each item of "
             "'items': outcome, deleted_profiles and disconnected (numbers)."
+            + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},
@@ -1121,7 +1173,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "restarted, and this server has no restart tool, so tell the user "
             "before moving anyone into the group. A name that is already a user "
             "or a group is refused. A group with administrator rights or "
-            "autologin is refused in automatic approval mode."
+            "autologin is refused in automatic approval mode." + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1184,7 +1236,9 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "value applies. A change that would lock out the account this server "
             "signs in with is refused. Granting administrator rights, switching "
             "MFA off, changing the authentication method and switching autologin "
-            "on are refused in automatic approval mode."
+            "on are refused in automatic approval mode. A false writes the "
+            "group's own false; to make the group follow the server again use "
+            "reset_to_inherited." + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1238,7 +1292,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "block or MFA set on the group); their running VPN sessions stay "
             "connected. The group's access list is deleted. Cannot be undone. "
             "The group of the account this server signs in with cannot be "
-            "deleted. The result lists members_without_group."
+            "deleted. The result lists members_without_group." + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},
