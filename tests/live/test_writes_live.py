@@ -511,3 +511,28 @@ async def test_block_user_without_a_session_and_its_refusals(live) -> None:
             await call_tool(live.auto, "block_user", {"usernames": ["alice", name]})
     users = (await live.call("list_users", {"usernames": ["alice", own]}))["profiles"]
     assert [user["deny"]["value"] for user in users] == [False, False]
+
+
+async def test_the_support_report_is_saved_whole_and_stays_out_of_the_result(
+    stand, tmp_path: Path
+) -> None:
+    name, settings = stand
+    server = Live(name, settings, tmp_path)
+    result = await server.call("create_support_report", {}, answer="none")
+    assert set(result) == {"path", "size_bytes", "reminder"}
+    path = Path(result["path"])
+    assert path.parent == server.out and path.name.endswith(
+        "-support-report-access-server.txt"
+    )
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert result["size_bytes"] == path.stat().st_size > 10_000
+    text = path.read_text("utf-8")
+    lines = text.strip().splitlines()
+    assert "Support summary" in lines[0] and "End Support summary" in lines[-1]
+    # Access Server masks its own secrets; the stand has a RADIUS secret set.
+    secrets = [
+        line for line in lines if line.startswith("auth.radius.0.server.0.secret")
+    ]
+    assert secrets and all(line.endswith(": [redacted]") for line in secrets)
+    assert "PRIVATE KEY-----" not in text
+    assert not (tmp_path / "audit.jsonl").exists()

@@ -4,6 +4,9 @@ including its habit of listing a session for a few seconds after it ended."""
 from __future__ import annotations
 
 import json
+import re
+import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,7 @@ from fastmcp.exceptions import ToolError
 
 from as_mcp_server import approval, tools_sessions
 from as_mcp_server.guards import Effect
+from as_mcp_server.outputs import DELIVERY_REMINDER
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
@@ -26,6 +30,7 @@ from as_mcp_server.texts import (
     MSG_NOT_DISCONNECTED,
 )
 from as_mcp_server.tools_sessions import (
+    MSG_EMPTY_REPORT,
     MSG_STILL_CONNECTED,
     NOTE_DOWNLOAD_LINK,
     Session,
@@ -346,9 +351,10 @@ async def test_block_user_has_no_disconnect_parameter(tmp_path: Path) -> None:
     assert tools["block_user"].annotations.destructive_hint is True
     assert tools["disconnect_vpn_sessions"].annotations.destructive_hint is True
     assert "update_user" in tools["block_user"].description
-    for name in tools_sessions.TOOLS:
+    for name in ("block_user", "disconnect_vpn_sessions"):
         assert tools[name].annotations.read_only_hint is False
         assert tools[name].annotations.idempotent_hint is False
+    for name in tools_sessions.TOOLS:
         assert tools[name].meta["fastmcp"]["tags"] == ["write"]
     read_only = build(Settings(url="https://as.example:943", user="u", password="p"))
     async with Client(read_only) as client:
@@ -722,3 +728,119 @@ def test_not_disconnected_names_only_newly_blocked_users_with_a_session() -> Non
         MSG_NOT_DISCONNECTED.format(name="alice"),
     )
     assert not_disconnected(effects, []) == ()
+
+
+# --- create_support_report --------------------------------------------------------
+
+REPORT = ("GET", "/api/support/report")
+REPORT_TEXT = (
+    "===== Support summary =====\n"
+    "host.name                               : as.example\n"
+    "auth.radius.0.server.0.secret           : [redacted]\n"
+    "admin note: \u0436\u0430\u043d\u043d\u0430 MARKER-3f9a\n"
+)
+REPORT_NAME = re.compile(r"^\d{8}-\d{6}-support-report-access-server(-2)?\.txt$")
+
+
+def report_server(tmp_path: Path, response: httpx.Response | None = None) -> FakeServer:
+    server = FakeServer(tmp_path)
+    answer = response or httpx.Response(200, text=REPORT_TEXT)
+    server.router.routes[REPORT] = [lambda request: answer]
+    return server
+
+
+def saved(tmp_path: Path) -> list[Path]:
+    folder = tmp_path / "output"
+    return sorted(folder.iterdir()) if folder.is_dir() else []
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_the_support_report_goes_to_a_file_and_not_into_the_result(
+    tmp_path: Path, mode: str
+) -> None:
+    server = report_server(tmp_path)
+    seen: list[str] = []
+    result = await server.call("create_support_report", {}, mode=mode, seen=seen)
+    (path,) = saved(tmp_path)
+    assert result == {
+        "path": str(path),
+        "size_bytes": len(REPORT_TEXT.encode("utf-8")),
+        "reminder": DELIVERY_REMINDER,
+    }
+    assert REPORT_NAME.match(path.name)
+    assert path.read_bytes() == REPORT_TEXT.encode("utf-8")
+    assert result["size_bytes"] > len(REPORT_TEXT)  # bytes, not characters
+    assert "MARKER" not in json.dumps(result) and "Support summary" not in str(result)
+    if sys.platform != "win32":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert seen == []  # nobody is asked to approve a read
+    assert server.audit() == []
+    asked = {(r.method, r.url.path) for r in server.router.requests}
+    assert asked == {LOGIN, REPORT}
+
+
+async def test_the_support_report_is_given_five_minutes(tmp_path: Path) -> None:
+    server = report_server(tmp_path)
+    await server.call("create_support_report", {})
+    (request,) = server.router.sent(*REPORT)
+    assert request.extensions["timeout"]["read"] == 300.0
+    (login,) = server.router.sent(*LOGIN)
+    assert login.extensions["timeout"]["read"] == 30.0
+
+
+async def test_the_support_report_needs_no_approval_prompt(tmp_path: Path) -> None:
+    server = report_server(tmp_path)
+    result = await server.call("create_support_report", {}, answer="none")
+    assert Path(result["path"]).is_file()
+
+
+async def test_two_support_reports_are_two_files(tmp_path: Path) -> None:
+    server = report_server(tmp_path)
+    first = await server.call("create_support_report", {})
+    second = await server.call("create_support_report", {})
+    assert first["path"] != second["path"] and len(saved(tmp_path)) == 2
+
+
+async def test_the_report_is_not_asked_for_when_it_could_not_be_saved(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "output").write_text("a file where the folder should be")
+    server = report_server(tmp_path)
+    with pytest.raises(ToolError, match="Cannot write to the output folder"):
+        await server.call("create_support_report", {})
+    assert server.router.sent(*REPORT) == []
+
+
+async def test_a_failed_support_report_leaves_no_file(tmp_path: Path) -> None:
+    server = report_server(tmp_path, httpx.Response(500, json={"detail": "boom"}))
+    with pytest.raises(ToolError):
+        await server.call("create_support_report", {})
+    assert saved(tmp_path) == []
+
+
+@pytest.mark.parametrize("body", ["", " \n\t\n"])
+async def test_an_empty_support_report_is_an_error_and_not_a_file(
+    tmp_path: Path, body: str
+) -> None:
+    server = report_server(tmp_path, httpx.Response(200, text=body))
+    with pytest.raises(ToolError) as error:
+        await server.call("create_support_report", {})
+    assert str(error.value) == MSG_EMPTY_REPORT
+    assert saved(tmp_path) == []
+
+
+async def test_the_support_report_is_a_read_tool_that_exists_only_in_write_mode(
+    tmp_path: Path,
+) -> None:
+    async with Client(report_server(tmp_path).mcp) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+    tool = tools["create_support_report"]
+    assert tool.annotations.read_only_hint is True
+    assert tool.annotations.destructive_hint is False
+    assert tool.input_schema.get("properties", {}) == {}
+    for fact in ("file", "minutes", "sensitive", "not returned"):
+        assert fact in tool.description, fact
+    read_only = build(Settings(url="https://as.example:943", user="u", password="p"))
+    async with Client(read_only) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert "create_support_report" not in names

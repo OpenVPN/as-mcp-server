@@ -1,4 +1,5 @@
-"""Write tools for VPN sessions: block a user, disconnect sessions.
+"""Write-mode tools for VPN sessions and support: block a user, disconnect
+sessions, save a support report.
 
 Measured with real VPN clients on 3.1.0 and 3.2.4: setting `deny` does not end a
 running session, so `block_user` disconnects it itself. `/vpn/status` keeps a
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from as_mcp_server.client import AccessServerClient, NotFoundError
 from as_mcp_server.effective import snapshot
 from as_mcp_server.guards import Effect, newly_denied
+from as_mcp_server.outputs import DELIVERY_REMINDER, probe_output_dir, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
     CLIENT_REASON,
@@ -27,6 +29,7 @@ from as_mcp_server.texts import (
     MSG_NOT_DISCONNECTED,
     MSG_ONE_TARGET,
 )
+from as_mcp_server.tools import READ
 from as_mcp_server.writes import (
     DESTRUCTIVE,
     MAX_ITEMS,
@@ -39,7 +42,9 @@ from as_mcp_server.writes import (
     run_write,
 )
 
-TOOLS = ("block_user", "disconnect_vpn_sessions")
+TOOLS = ("block_user", "disconnect_vpn_sessions", "create_support_report")
+# Access Server runs diagnostic programs to build the report.
+REPORT_TIMEOUT = 300.0
 # How long to wait for an ended session to leave /vpn/status: SETTLE_POLLS reads,
 # POLL_SECONDS apart. The server needed 5 to 6 seconds on both tested versions.
 SETTLE_POLLS = 15
@@ -50,6 +55,7 @@ NOTE_DOWNLOAD_LINK = (
     "cannot connect while blocked."
 )
 MSG_STILL_CONNECTED = "a session is still connected; call disconnect_vpn_sessions"
+MSG_EMPTY_REPORT = "Access Server returned an empty support report. No file was saved."
 
 
 class Session(BaseModel):
@@ -462,3 +468,38 @@ def register_session_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "reason": reason,
         }
         return await run_write(ctx, deps, _Disconnect(reason=reason), targets, args)
+
+    @mcp.tool(
+        name="create_support_report",
+        description=(
+            "Save the Access Server support report to a local file, for OpenVPN "
+            "support or for your own troubleshooting. The report is plain text: "
+            "version and platform, service status, configuration keys, license "
+            "usage, cluster state, network interfaces, routes and firewall rules. "
+            "Access Server replaces passwords and keys with [redacted], but the "
+            "report still holds sensitive settings, so its text is not returned: "
+            "the result has only path, size_bytes and a reminder. Do not read the "
+            "file back into the conversation unless the user asks for it. Nothing "
+            "on the server is changed and no approval is asked. The server runs "
+            "diagnostic programs to build it, so allow up to 5 minutes; do not "
+            "call it in a loop."
+        ),
+        annotations=READ,
+        tags={"write"},
+    )
+    async def create_support_report() -> dict[str, Any]:
+        directory = deps.holder.settings.resolved_output_dir()
+        probe_output_dir(directory)
+        text = await deps.holder.get().get_text(
+            "/support/report", timeout=REPORT_TIMEOUT
+        )
+        if not text.strip():
+            raise ToolError(MSG_EMPTY_REPORT)
+        path = write_secret_file(
+            directory, "support-report", "access-server", "txt", text
+        )
+        return {
+            "path": str(path),
+            "size_bytes": path.stat().st_size,
+            "reminder": DELIVERY_REMINDER,
+        }

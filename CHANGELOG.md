@@ -26,6 +26,10 @@ All notable changes to this project are documented here. The format follows
   `disconnect_vpn_sessions` takes usernames or single sessions and does not block. The
   text shown to the VPN user is fixed. The account the server signs in with cannot be
   blocked.
+- `create_support_report`, registered only with `OPENVPN_AS_WRITE_TOOLS=true`: saves
+  the Access Server support report to a file in the output folder and returns the path
+  and the size, never the text. It changes nothing on the server and asks no approval;
+  the request may take up to 5 minutes.
 
 ### Changed
 - An Access Server version that cannot be read is treated as below the supported
