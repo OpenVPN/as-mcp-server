@@ -361,7 +361,7 @@ class Connected:
 
     async def connect(self, expected: int = 1) -> VpnClient:
         """Start one more client and wait until the server lists `expected`
-        sessions (the status needs about six seconds to show a new one)."""
+        sessions."""
         name = f"live-vpn-{self.live.name}-{len(self.clients)}"
         client = VpnClient(name, self.profile).start()
         self.clients.append(client)

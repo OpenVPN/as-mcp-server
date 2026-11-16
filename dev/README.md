@@ -129,8 +129,13 @@ Measured on 3.1.0 and 3.2.4 on 2026-11-13 (first on 3.2.2 on 2026-11-11):
 - The same call for a target without a session answers `404 "Some of the clients are
   missing"`. With two users of whom one has no session the answer is also 404, and the
   session of the other one is disconnected anyway.
-- `/vpn/status` shows a new session after about 6 seconds and keeps an ended one for about
-  5 seconds. A disconnect sent while an ended session is still listed answers 404.
+- `/vpn/status` lists a new session at once: within 0.1 seconds of the moment the client
+  receives its configuration (the push reply), which is about 5 seconds before the OpenVPN
+  2.6 client prints "Initialization Sequence Completed" (5 runs per version, 2026-11-16; an
+  earlier note here said "after about 6 seconds", which counted the time the client needs
+  to connect). An ended session stays listed for 5.1 to 5.6 seconds, whether the server
+  disconnected it or the client left. A disconnect sent while an ended session is still
+  listed answers 404.
 - A client that was killed without a goodbye stays in `/vpn/status` for more than 20
   seconds; disconnecting it answers 200 and removes it.
 - Blocking a user does not stop an unused download link of that user: the link still
@@ -169,6 +174,23 @@ Measured on 3.1.0 and 3.2.4 on 2026-11-14, with the API and with real VPN client
   user into such a group.
 - An explicit `false` in `/users/create` is stored as the user's own value, so the tool
   sends `admin` and `deny` only when they are true.
+
+### What Access Server does with access lists (measured, for 0.3.0)
+
+Measured on 3.1.0 and 3.2.4 on 2026-11-16 with a real client and pings through the VPN to
+an address only the server has (the AS team said the same on AS-6617 on 2026-11-13):
+
+- An entry added with `/userprop/access/set` (class `route` or `nat`, for a user) does not
+  take effect for the connected user, and not after the user reconnects either. It takes
+  effect after a warm restart. The warm restart resets the client's connection; the client
+  comes back by itself.
+- A removed entry stays in force the same way, until the next warm restart: a user keeps
+  the access that was taken away.
+- An entry written for `__DEFAULT__` is stored and never returned, and after a restart a
+  plain user did not get access through it. The AS team: global subnet rules are the
+  configuration keys `vpn.server.routing.private_network.<N>` (with
+  `vpn.server.routing.private_access` and `vpn.server.routing.routed_subnets.<N>`), which
+  `get_status_overview(config_names=[...])` reads.
 
 ## Rebuilding the fixtures (no Admin UI needed)
 

@@ -77,9 +77,8 @@ groups, connection profiles and sessions. What protects the server then:
 - **The server never repeats a write.** A request that times out is reported with the state
   read afterwards, and later items of the same list are not attempted.
 
-Known gaps: a VPN session that connected in the last few seconds is not yet listed by Access
-Server, so a block or a delete at that moment does not see it; blocking a group or moving a
-user into a blocked group does not disconnect running sessions (the tools name them); an
+Known gaps: blocking a group or moving a user into a blocked group does not disconnect
+running sessions (the tools name them); an
 Access Server version newer than the tested ones is allowed with a warning; switching MFA on
 for the account the server signs in with is allowed, and the next sign-in then needs a
 person; the approval text is plain text, and an app that renders it as Markdown or HTML may
