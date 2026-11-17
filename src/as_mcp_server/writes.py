@@ -35,7 +35,12 @@ from as_mcp_server.effective import (
     CannotCompute,
     server_wide,
 )
-from as_mcp_server.guards import Effect, auto_limit_reason, lockout_reason
+from as_mcp_server.guards import (
+    Effect,
+    auto_limit_reason,
+    lockout_reason,
+    own_mfa_reason,
+)
 from as_mcp_server.outputs import probe_output_dir
 from as_mcp_server.preview import PreviewItem, clean, render, shown_name
 from as_mcp_server.texts import (
@@ -44,6 +49,7 @@ from as_mcp_server.texts import (
     MSG_CHANGED,
     MSG_LOCKOUT,
     MSG_NO_ELICITATION,
+    WARN_OWN_MFA,
 )
 from as_mcp_server.versions import untested_warning, version_status
 
@@ -463,10 +469,13 @@ async def run_write[Item](
             error=reason,
             predicted=True,
         )
+    own_mfa = own_mfa_reason(own.name, effects)
     if settings.approval == "auto":
-        reason = next(
-            (plan.auto_reason for plan in plans if plan.auto_reason), None
-        ) or auto_limit_reason(effects)
+        reason = (
+            next((plan.auto_reason for plan in plans if plan.auto_reason), None)
+            or auto_limit_reason(effects)
+            or own_mfa
+        )
         if reason is not None:
             raise run.refuse(
                 rows,
@@ -475,6 +484,9 @@ async def run_write[Item](
                 error=reason,
                 predicted=True,
             )
+
+    if own_mfa is not None:
+        warnings.append(WARN_OWN_MFA.format(name=clean(own.name)))
 
     # 6. Show the change and ask.
     text = render(client.config.url, op.action, [p.preview for p in plans], warnings)

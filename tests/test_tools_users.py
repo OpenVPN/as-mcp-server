@@ -27,6 +27,7 @@ from as_mcp_server.texts import (
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
+    WARN_OWN_MFA,
 )
 from as_mcp_server.tools_sessions import MSG_STILL_CONNECTED
 from as_mcp_server.tools_users import (
@@ -1162,8 +1163,64 @@ async def test_removing_admin_from_the_own_account_is_refused_also_through_reset
         )
     assert server.written() == []
     # A change that keeps the account working is made.
-    result = await server.call("update_user", {"usernames": ["openvpn"], "totp": True})
+    result = await server.call(
+        "update_user", {"usernames": ["openvpn"], "allow_generate_profiles": False}
+    )
     assert only(result)["outcome"] == "done"
+
+
+async def test_mfa_for_the_own_account_is_asked_with_a_warning(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["openvpn"], "totp": True}, seen=seen
+    )
+    assert only(result)["outcome"] == "done"
+    warning = WARN_OWN_MFA.format(name="openvpn")
+    assert f"Warning: {warning}" in seen[0]
+    assert warning in result["notes"]
+    # Someone else's MFA carries no such warning.
+    seen.clear()
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "totp": True}, seen=seen
+    )
+    assert "signs in with" not in seen[0]
+
+
+async def test_mfa_for_the_own_account_is_refused_in_auto_mode(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user", {"usernames": ["openvpn"], "totp": True}, answer="none"
+        )
+    assert str(error.value) == MSG_AUTO_LIMIT.format(
+        reason="MFA would be switched on for the account as-mcp-server signs in "
+        "with (openvpn); its next sign-in needs a code from a person"
+    )
+    assert server.written() == []
+    assert server.audit()[0]["outcome"] == "refused_auto_limit"
+
+
+async def test_mfa_through_the_own_group_is_refused_in_auto_and_warned_in_prompt(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path / "auto", mode="auto")
+    server.users["openvpn"]["group"] = "staff"
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_group", {"name": "staff", "totp": True}, answer="none"
+        )
+    assert "signs in with (openvpn)" in str(error.value)
+    assert server.written() == []
+
+    server = FakeServer(tmp_path / "prompt")
+    server.users["openvpn"]["group"] = "staff"
+    seen: list[str] = []
+    result = await server.call(
+        "update_group", {"name": "staff", "totp": True}, seen=seen
+    )
+    assert only(result)["outcome"] == "done"
+    assert WARN_OWN_MFA.format(name="openvpn") in seen[0]
 
 
 async def test_a_group_name_as_a_user_target_is_refused(tmp_path: Path) -> None:

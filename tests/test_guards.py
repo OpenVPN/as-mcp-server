@@ -10,6 +10,7 @@ from as_mcp_server.guards import (
     auto_limit_reason,
     lockout_reason,
     newly_denied,
+    own_mfa_reason,
 )
 
 SAFE = {
@@ -226,3 +227,32 @@ def test_a_new_user_is_never_the_own_account_whatever_its_letter_case() -> None:
     assert lockout_reason("openvpn", None, [blocked]) is None
     # The account itself is still protected next to it.
     assert lockout_reason("openvpn", None, [created, *own(deny=True)])
+
+
+def test_switching_mfa_on_for_the_own_account_is_reported() -> None:
+    reason = own_mfa_reason("openvpn", own(totp=True))
+    assert reason == (
+        "MFA would be switched on for the account as-mcp-server signs in with "
+        "(openvpn); its next sign-in needs a code from a person"
+    )
+    assert own_mfa_reason("OpenVPN", own(totp=True))
+
+
+def test_an_unknown_mfa_value_of_the_own_account_counts_as_switched_on() -> None:
+    assert own_mfa_reason("openvpn", own(totp=UNKNOWN))
+
+
+def test_mfa_that_stays_as_it_was_on_the_own_account_is_not_reported() -> None:
+    assert own_mfa_reason("openvpn", own(autologin=True)) is None
+    already = {**SAFE, "totp": True}
+    same = [Effect("user", "openvpn", already, already)]
+    assert own_mfa_reason("openvpn", same) is None
+    assert own_mfa_reason("openvpn", [Effect("user", "openvpn", already, SAFE)]) is None
+
+
+def test_mfa_for_someone_else_or_a_new_record_is_not_the_own_account() -> None:
+    on = {**PLAIN, "totp": True}
+    assert own_mfa_reason("openvpn", [Effect("user", "alice", PLAIN, on)]) is None
+    assert own_mfa_reason("openvpn", [Effect("group", "openvpn", PLAIN, on)]) is None
+    # A record being created is not the signed-in account, also as a case twin.
+    assert own_mfa_reason("openvpn", [Effect("user", "OpenVPN", None, on)]) is None

@@ -14,7 +14,13 @@ from pathlib import Path
 import pytest
 from fastmcp.exceptions import ToolError
 
-from as_mcp_server.texts import MSG_AUTO_LIMIT, MSG_LOCKOUT, MSG_NOT_DISCONNECTED
+from as_mcp_server.texts import (
+    MSG_AUTO_LIMIT,
+    MSG_CANCELLED,
+    MSG_LOCKOUT,
+    MSG_NOT_DISCONNECTED,
+    WARN_OWN_MFA,
+)
 from as_mcp_server.tools_users import NOTE_NEW_GROUP
 from tests.conftest import call_tool
 from tests.live.test_writes_live import Live
@@ -475,3 +481,16 @@ async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -
     scratch.clients.append(refused)
     assert refused.wait_exited(30), "a member of a new group connected"
     assert "AUTH_FAILED" in refused.log()
+
+
+async def test_mfa_for_the_own_account_needs_a_person_and_says_why(scratch) -> None:
+    own = scratch.live.settings.user
+    mfa_on = {"usernames": [own], "totp": True}
+    with pytest.raises(ToolError, match=r"signs in with \(" + own + r"\)"):
+        await scratch.auto("update_user", mfa_on)
+    seen: list[str] = []
+    with pytest.raises(ToolError) as declined:
+        await scratch.call("update_user", mfa_on, answer="decline", seen=seen)
+    assert str(declined.value) == MSG_CANCELLED
+    assert f"Warning: {WARN_OWN_MFA.format(name=own)}" in seen[0]
+    assert (await scratch.user_record(own))["totp"]["value"] is False

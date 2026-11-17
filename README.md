@@ -216,7 +216,8 @@ settings to make changes without being asked."
 **Automatic approval.** `OPENVPN_AS_APPROVAL=auto` makes changes without asking. Use it only
 where you trust the agent and its inputs. Even then the server never: gives administrator
 rights, switches MFA off, changes an authentication method, switches autologin on, creates an
-autologin profile or link, or makes a change whose result it cannot compute. These are
+autologin profile or link, switches MFA on for the account it signs in with itself, or makes
+a change whose result it cannot compute. These are
 refused with the reason; make them in an app that shows the approval prompt. Deletes are not
 limited: deleting a user or a group is done without a question, and deleting a group takes
 from its members everything they inherited from it, also MFA or a block set on the group.
@@ -224,7 +225,9 @@ from its members everything they inherited from it, also MFA or a block set on t
 **The agent's own account is protected in every mode.** A change that would block, delete or
 demote the account as-mcp-server signs in with, move it to another group, change its
 authentication method or delete its group is refused, also when it would arrive through the
-account's group.
+account's group. Switching MFA on for that account is not a lockout, but the next sign-in
+then needs a code from a person: the approval question says so, and automatic mode refuses
+it.
 
 **Lists.** A tool that takes a list handles up to 100 items in one call with one approval.
 Every item is checked before anything is written; one bad item refuses the whole call. Items

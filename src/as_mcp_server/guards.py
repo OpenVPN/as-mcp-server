@@ -71,6 +71,26 @@ def lockout_reason(
     return None
 
 
+def own_mfa_reason(own_name: str, effects: Sequence[Effect]) -> str | None:
+    """Why the next sign-in of as-mcp-server would need a person, or None.
+
+    Not a lockout: a person can enter the code. Refused in automatic mode and shown
+    as a warning when a person approves.
+    """
+    for effect in effects:
+        if effect.kind != "user" or not _same(effect.name, own_name):
+            continue
+        before, after = effect.before, effect.after
+        if before is None or after is None:
+            continue
+        if after["totp"] is not False and before["totp"] is not True:
+            return (
+                "MFA would be switched on for the account as-mcp-server signs in "
+                f"with ({effect.name}); its next sign-in needs a code from a person"
+            )
+    return None
+
+
 def auto_limit_reason(effects: Sequence[Effect]) -> str | None:
     """Why the write needs a person's approval, or None. Deletes pass."""
     for effect in effects:

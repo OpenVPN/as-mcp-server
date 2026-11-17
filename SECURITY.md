@@ -78,9 +78,7 @@ groups, connection profiles and sessions. What protects the server then:
   read afterwards, and later items of the same list are not attempted.
 
 Known gaps: blocking a group or moving a user into a blocked group does not disconnect
-running sessions (the tools name them); an
-Access Server version newer than the tested ones is allowed with a warning; switching MFA on
-for the account the server signs in with is allowed, and the next sign-in then needs a
-person; the approval text is plain text, and an app that renders it as Markdown or HTML may
-show a crafted name differently from what was written (a name that holds invisible
+running sessions (the tools name them); an Access Server version newer than the tested
+ones is allowed with a warning; the approval text is plain text, and an app that renders
+it as Markdown or HTML may show a crafted name differently from what was written (a name that holds invisible
 characters or is cut is marked as such).

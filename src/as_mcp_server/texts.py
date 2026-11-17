@@ -21,6 +21,10 @@ MSG_AUTO_LIMIT = (
     "Refused in automatic approval mode: {reason}. Repeat it in an app that shows "
     "the approval prompt, or in the Admin UI."
 )
+WARN_OWN_MFA = (
+    "the account as-mcp-server signs in with ({name}) will need an MFA code at the "
+    "next sign-in."
+)
 MSG_UNTESTED = "Access Server {server} is not on the tested list of as-mcp-server {mcp}"
 MSG_USE_BLOCK = (
     "Refused: use block_user to block a user; it also disconnects the user's sessions."

@@ -61,6 +61,9 @@ and sessions. It is off by default, and every change is shown for approval first
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
+- Switching MFA on for the account as-mcp-server signs in with (directly or through its
+  group) is refused in automatic approval mode, and the approval question warns that the
+  next sign-in will need an MFA code.
 - The server instructions for "what can user X reach" now send the agent to
   `get_status_overview` for the global IP/subnet rules (the configuration keys
   `vpn.server.routing.private_network.<N>` and `vpn.server.routing.private_access`)
