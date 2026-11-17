@@ -70,6 +70,9 @@ and sessions. It is off by default, and every change is shown for approval first
 - An invalid `OPENVPN_AS_*` variable (for example `OPENVPN_AS_WRITE_TOOLS=maybe` or
   `OPENVPN_AS_APPROVAL=never`) is reported as one line that names the variable and the
   allowed values, with exit code 1, instead of a Python traceback.
+- `OPENVPN_AS_LOG_LEVEL` now sets the level of as-mcp-server's own lines only. Libraries
+  log from WARNING up, so `DEBUG` no longer prints the HTTP library's lines with response
+  headers, and `INFO` no longer prints full request URLs.
 
 ## [0.1.0] - 2026-10-05
 

@@ -291,7 +291,8 @@ Remove stored credentials with `uvx as-mcp-server setup --clear`.
 
 - The server logs to stderr only; `OPENVPN_AS_LOG_LEVEL=DEBUG` adds one line per request
   (`METHOD /path -> status in N ms`) and the background token renewals. Bodies, headers,
-  passwords and tokens are never logged.
+  passwords and tokens are never logged. The level applies to as-mcp-server's own lines;
+  the libraries it uses log from WARNING up.
 - The reliable way to read the log is a terminal: `OPENVPN_AS_LOG_LEVEL=DEBUG uvx
   as-mcp-server check` performs the same login and `GET /server/info` as the
   `connection_info` tool and prints the log next to the result.

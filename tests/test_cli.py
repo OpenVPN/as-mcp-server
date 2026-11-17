@@ -5,6 +5,7 @@ serve runs the stdio server.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -380,3 +381,30 @@ def test_every_invalid_variable_gets_its_own_line(
     assert cli.main([]) == 1
 
     assert len(capsys.readouterr().err.splitlines()) == 2
+
+
+@pytest.fixture(autouse=True)
+def restored_logging():
+    root, own = logging.getLogger(), logging.getLogger("as_mcp_server")
+    before = (root.level, own.level)
+    yield
+    root.setLevel(before[0])
+    own.setLevel(before[1])
+
+
+@pytest.mark.parametrize(
+    ("level", "own", "others"),
+    [
+        ("DEBUG", logging.DEBUG, logging.WARNING),
+        ("INFO", logging.INFO, logging.WARNING),
+        ("WARNING", logging.WARNING, logging.WARNING),
+        ("ERROR", logging.ERROR, logging.ERROR),
+    ],
+)
+def test_the_log_level_is_for_our_lines_only(level: str, own: int, others: int) -> None:
+    cli.configure_logging(level)
+
+    assert logging.getLogger("as_mcp_server.client").getEffectiveLevel() == own
+    # httpcore prints response headers at DEBUG and httpx the full URL at INFO.
+    for name in ("httpcore.http11", "httpx", "asyncio", "mcp.server", "keyring"):
+        assert logging.getLogger(name).getEffectiveLevel() == others, name

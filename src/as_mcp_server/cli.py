@@ -91,11 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for line in _setting_errors(exc):
             print(f"error: {line}", file=sys.stderr)
         return 1
-    logging.basicConfig(
-        level=settings.log_level,
-        stream=sys.stderr,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging(settings.log_level)
     try:
         if args.command == "setup":
             return _setup(args, settings)
@@ -107,6 +103,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ToolError, profiles.ProfilesError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+
+def configure_logging(level: str) -> None:
+    """The level is for as-mcp-server's own lines; libraries stay at WARNING or above.
+
+    At DEBUG the HTTP library prints response headers and at INFO full URLs.
+    """
+    own = logging.getLevelNamesMapping()[level]
+    logging.basicConfig(stream=sys.stderr, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger().setLevel(max(own, logging.WARNING))
+    logging.getLogger("as_mcp_server").setLevel(own)
 
 
 def _setting_errors(exc: ValidationError) -> list[str]:
