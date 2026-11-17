@@ -63,7 +63,11 @@ INSTRUCTIONS = (
     "list_access_lists(usernames=[X],\n"
     "group_names=[the user's group]) for the IPv4 subnet rules, and report both. "
     "Global IP/subnet rules\n"
-    "are not visible through the API; say so and point to the Admin UI for them.\n"
+    "are server settings, not access lists: call "
+    "get_status_overview(config_names=[...]) with\n"
+    "vpn.server.routing.private_network.0 to .9 and "
+    "vpn.server.routing.private_access, and report\n"
+    "them too; a number that is not set is left out of the answer.\n"
     "When asked whether user X is locked out, call get_log_reports(username=X, "
     "errors_only=true,\n"
     'since="24h") and list_users(usernames=[X]) right away, without asking, and '

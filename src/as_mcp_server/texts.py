@@ -30,8 +30,11 @@ MSG_NOT_DISCONNECTED = (
     "disconnect_vpn_sessions."
 )
 MSG_ONE_TARGET = "Give exactly one of {a} or {b}."
+# The AS team (AS-6617): the global subnet rules are configuration keys.
 NOTE_GLOBAL_IP = (
-    "Global IP/subnet rules are not visible through the API; check the Admin UI."
+    "Global IP/subnet rules are server settings, not access lists: read "
+    "vpn.server.routing.private_network.0, .1, ... and "
+    "vpn.server.routing.private_access with get_status_overview."
 )
 # Measured on 3.1.0 and 3.2.4: an IPv6 access list set on the server is not in the
 # answer of /userprop/access/list, and the API refuses to write one.

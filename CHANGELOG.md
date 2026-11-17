@@ -55,11 +55,16 @@ and sessions. It is off by default, and every change is shown for approval first
   version.
 - Two read tools, always on: `list_connection_profiles` (who holds which connection profile;
   never the profile file or its key; serials are strings of digits) and `list_access_lists`
-  (IPv4 access lists of users and groups, with a note that the global IP/subnet rules and
-  IPv6 access lists are not visible through the API).
+  (IPv4 access lists of users and groups, with a note that the global IP/subnet rules are
+  server settings read with `get_status_overview`, and that IPv6 access lists are not
+  returned by the API).
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
+- The server instructions for "what can user X reach" now send the agent to
+  `get_status_overview` for the global IP/subnet rules (the configuration keys
+  `vpn.server.routing.private_network.<N>` and `vpn.server.routing.private_access`)
+  instead of to the Admin UI.
 - The thirteen tools of 0.1.0 are unchanged, in both modes.
 - An Access Server version that cannot be read is treated as below the supported minimum.
 - FastMCP 4.1 or newer is required.

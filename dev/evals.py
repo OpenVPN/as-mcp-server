@@ -118,7 +118,12 @@ CASES = (
     Case(
         "reach",
         "What can user alice reach over the VPN?",
-        calls_all=("list_access_rulesets", "list_access_rules", "list_access_lists"),
+        calls_all=(
+            "list_access_rulesets",
+            "list_access_rules",
+            "list_access_lists",
+            "get_status_overview",
+        ),
         # The ruleset; alice's own entries (a nat host, a subnet limited to ports,
         # a denied host) and her group's subnet; where the rest has to be checked.
         says=(
@@ -128,7 +133,7 @@ CASES = (
             r"10\.40\.0\.0",
             r"443",
             r"10\.40\.0\.99",
-            r"Admin UI",
+            r"172\.21\.0\.0",
             r"IPv6",
         ),
     ),

@@ -174,7 +174,9 @@ async def test_every_shape_of_access_entry_reaches_the_agent_unchanged(
 
 def test_the_note_names_both_things_the_list_cannot_show() -> None:
     assert NOTE_ACCESS_LISTS == (
-        "Global IP/subnet rules are not visible through the API; check the Admin UI. "
+        "Global IP/subnet rules are server settings, not access lists: read "
+        "vpn.server.routing.private_network.0, .1, ... and "
+        "vpn.server.routing.private_access with get_status_overview. "
         "IPv6 access lists are not returned by the API."
     )
     assert NOTE_ACCESS_LISTS.startswith(NOTE_GLOBAL_IP)
