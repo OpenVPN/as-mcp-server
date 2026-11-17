@@ -65,6 +65,12 @@ and sessions. It is off by default, and every change is shown for approval first
 - FastMCP 4.1 or newer is required.
 - Tested on Access Server 3.1.0 and 3.2.4.
 
+### Fixed
+
+- An invalid `OPENVPN_AS_*` variable (for example `OPENVPN_AS_WRITE_TOOLS=maybe` or
+  `OPENVPN_AS_APPROVAL=never`) is reported as one line that names the variable and the
+  allowed values, with exit code 1, instead of a Python traceback.
+
 ## [0.1.0] - 2026-10-05
 
 First public release. Read-only: no tool changes anything on the server.

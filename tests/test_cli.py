@@ -345,3 +345,38 @@ def test_check_hides_the_answer_when_the_server_sends_no_prompt(
     answers.feed("4321")
     assert cli.main(["check"]) == 0
     assert answers.hidden == ["Second factor: "]
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "expected"),
+    [
+        ("OPENVPN_AS_WRITE_TOOLS", "maybe", "must be true or false"),
+        ("OPENVPN_AS_INSECURE", "maybe", "must be true or false"),
+        ("OPENVPN_AS_APPROVAL", "never", "must be prompt or auto"),
+        ("OPENVPN_AS_LOG_LEVEL", "LOUD", "must be DEBUG, INFO, WARNING or ERROR"),
+        ("OPENVPN_AS_TIMEOUT", "-5", "OPENVPN_AS_TIMEOUT: "),
+    ],
+)
+def test_an_invalid_variable_is_one_line_that_names_it(
+    monkeypatch: pytest.MonkeyPatch, capsys, variable: str, value: str, expected: str
+) -> None:
+    monkeypatch.setenv(variable, value)
+
+    assert cli.main(["check"]) == 1
+
+    err = capsys.readouterr().err
+    assert err.startswith(f"error: {variable}")
+    assert expected in err
+    assert len(err.splitlines()) == 1
+    assert "Traceback" not in err and value not in err.replace(variable, "")
+
+
+def test_every_invalid_variable_gets_its_own_line(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setenv("OPENVPN_AS_WRITE_TOOLS", "maybe")
+    monkeypatch.setenv("OPENVPN_AS_APPROVAL", "never")
+
+    assert cli.main([]) == 1
+
+    assert len(capsys.readouterr().err.splitlines()) == 2

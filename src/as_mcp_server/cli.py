@@ -15,10 +15,10 @@ import getpass
 import logging
 import sys
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, get_args
 
 from fastmcp.exceptions import ToolError
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from as_mcp_server import __version__, profiles, secrets
 from as_mcp_server.client import AccessServerClient, MfaRequiredError
@@ -85,7 +85,12 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    settings = Settings()
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        for line in _setting_errors(exc):
+            print(f"error: {line}", file=sys.stderr)
+        return 1
     logging.basicConfig(
         level=settings.log_level,
         stream=sys.stderr,
@@ -102,6 +107,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ToolError, profiles.ProfilesError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+
+def _setting_errors(exc: ValidationError) -> list[str]:
+    """One line per bad OPENVPN_AS_* variable; the value is never repeated."""
+    lines = []
+    for error in exc.errors(include_input=False, include_url=False):
+        field = str(error["loc"][0])
+        variable = f"OPENVPN_AS_{field.upper()}"
+        info = Settings.model_fields.get(field)
+        choices = get_args(info.annotation) if info is not None else ()
+        if info is not None and info.annotation is bool:
+            lines.append(f"{variable} must be true or false.")
+        elif choices and all(isinstance(choice, str) for choice in choices):
+            allowed = ", ".join(choices[:-1]) + f" or {choices[-1]}"
+            lines.append(f"{variable} must be {allowed}.")
+        else:
+            lines.append(f"{variable}: {error['msg']}.")
+    return lines
 
 
 def _serve(settings: Settings) -> int:
