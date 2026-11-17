@@ -405,7 +405,7 @@ async def test_a_generated_password_signs_in_and_a_deleted_user_is_disconnected(
 
     again = VpnClient(f"{client.name}-again", profile, auth).start()
     scratch.clients.append(again)
-    assert again.wait_exited(30) and "AUTH_FAILED" in again.log()
+    assert again.wait_exited(30) and again.refused()
 
 
 async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_session(
@@ -480,7 +480,7 @@ async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -
     refused = VpnClient(f"{first.name}-in-group", profile).start()
     scratch.clients.append(refused)
     assert refused.wait_exited(30), "a member of a new group connected"
-    assert "AUTH_FAILED" in refused.log()
+    assert refused.refused()
 
 
 async def test_mfa_for_the_own_account_needs_a_person_and_says_why(scratch) -> None:

@@ -423,7 +423,7 @@ async def test_block_user_blocks_and_disconnects_a_connected_user(connected) -> 
     again = VpnClient(f"{client.name}-again", connected.profile).start()
     connected.clients.append(again)
     assert again.wait_exited(30)
-    assert "AUTH_FAILED,DENY" in again.log()
+    assert again.refused("DENY")
 
     # What the tool says about download links, checked on the real server.
     url = Path(link["items"][0]["path"]).read_text("utf-8").splitlines()[0]

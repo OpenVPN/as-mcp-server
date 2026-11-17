@@ -1,8 +1,13 @@
 """Real OpenVPN clients for the live tests: one container per client, on the
-network of the dev stand (dev/vpn-client/Dockerfile)."""
+network of the dev stand.
+
+OPENVPN_AS_LIVE_VPN_CLIENT picks the client: "3" (the default) is OpenVPN 3 Linux
+(dev/vpn-client3), "2" is OpenVPN 2.6 (dev/vpn-client). The two reconnect differently,
+so a full check runs the live tests once with each."""
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -13,9 +18,20 @@ import pytest
 
 from tests.live.conftest import ROOT
 
-IMAGE = "as-mcp-dev/vpn-client:1"
 NETWORK = "dev_default"
-CONNECTED = "Initialization Sequence Completed"
+KIND = os.environ.get("OPENVPN_AS_LIVE_VPN_CLIENT", "3")
+if KIND == "2":
+    IMAGE, SOURCE = "as-mcp-dev/vpn-client:1", "vpn-client"
+    CONNECTED = "Initialization Sequence Completed"
+    REFUSED = "AUTH_FAILED"
+    RUN = ("--cap-add", "NET_ADMIN", "--device", "/dev/net/tun")
+elif KIND == "3":
+    IMAGE, SOURCE = "as-mcp-dev/vpn-client3:1", "vpn-client3"
+    CONNECTED = "Client INFO: Connected:"
+    REFUSED = "User authentication failed"
+    RUN = ("--privileged",)
+else:
+    raise RuntimeError("OPENVPN_AS_LIVE_VPN_CLIENT must be 2 or 3")
 
 
 def docker(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
@@ -28,7 +44,7 @@ def require_client_image() -> None:
     if shutil.which("docker") is None:
         pytest.skip("docker is needed to run a VPN client")
     if not docker("image", "inspect", IMAGE).stdout.strip().startswith("["):
-        docker("build", "-q", "-t", IMAGE, str(ROOT / "dev" / "vpn-client"), check=True)
+        docker("build", "-q", "-t", IMAGE, str(ROOT / "dev" / SOURCE), check=True)
 
 
 def address_of(stand: str) -> str:
@@ -63,10 +79,11 @@ class VpnClient:
         options: list[str] = []
         if self.auth is not None:
             mounts += ["-v", f"{self.auth}:/auth.txt:ro"]
-            options = ["--auth-user-pass", "/auth.txt", "--auth-retry", "none"]
+            if KIND == "2":
+                options = ["--auth-user-pass", "/auth.txt", "--auth-retry", "none"]
         docker(
             *("run", "-d", "--name", self.name, "--network", NETWORK),
-            *("--cap-add", "NET_ADMIN", "--device", "/dev/net/tun"),
+            *RUN,
             *mounts,
             IMAGE,
             *options,
@@ -87,6 +104,13 @@ class VpnClient:
 
     def wait_exited(self, seconds: float = 20) -> bool:
         return self._wait(lambda: not self.running(), seconds)
+
+    def refused(self, reason: str = "") -> bool:
+        """Whether the server turned the client away. OpenVPN 2 prints the server's
+        reason (`AUTH_FAILED,DENY`); OpenVPN 3 prints only that authentication
+        failed, so `reason` is checked for OpenVPN 2 alone."""
+        wanted = f"{REFUSED},{reason}" if reason and KIND == "2" else REFUSED
+        return wanted in self.log()
 
     def _wait(self, done, seconds: float, *, stop_when_dead: bool = False) -> bool:
         end = time.monotonic() + seconds

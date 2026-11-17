@@ -109,8 +109,21 @@ holds a client key: keep it in `dev/.local/`. Clean up with `docker rm -f vpn-cl
 `docker exec as-latest sacli --user "qa vpn test user" UserPropDelAll`.
 
 The live tests of `block_user` and `disconnect_vpn_sessions` start such clients themselves,
-from the image `as-mcp-dev/vpn-client:1` (`dev/vpn-client/Dockerfile`; built on first use),
-with a profile made by `create_connection_profile`. The stand allows two VPN connections at
+with a profile made by `create_connection_profile`. There are two client images, both built
+on first use:
+
+| `OPENVPN_AS_LIVE_VPN_CLIENT` | Image | Client |
+|---|---|---|
+| `3` (the default) | `as-mcp-dev/vpn-client3:1` (`dev/vpn-client3/`) | OpenVPN 3 Linux; the container runs with `--privileged` |
+| `2` | `as-mcp-dev/vpn-client:1` (`dev/vpn-client/`) | OpenVPN 2.6 |
+
+The Access Server team says the two families reconnect differently, so development follows
+OpenVPN 3, and the full check before a merge runs the live tests once with each:
+`make live` and `OPENVPN_AS_LIVE_VPN_CLIENT=2 make live`. OpenVPN Connect is a desktop app
+and is checked by hand. A refused OpenVPN 2 client prints the server's reason
+(`AUTH_FAILED,DENY`); an OpenVPN 3 client prints only `User authentication failed`.
+
+The stand allows two VPN connections at
 a time (3.1.0 is unlicensed, 3.2.4 runs a trial), so stop a client with `docker stop`, not
 `docker kill`: a killed client stays in `/vpn/status` and keeps its slot until the server
 times it out.
