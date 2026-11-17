@@ -61,6 +61,8 @@ and sessions. It is off by default, and every change is shown for approval first
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
+- In automatic approval mode `delete_group` is refused when a member would lose MFA, a
+  block or its authentication method with the group. A person can still approve it.
 - Switching MFA on for the account as-mcp-server signs in with (directly or through its
   group) is refused in automatic approval mode, and the approval question warns that the
   next sign-in will need an MFA code.

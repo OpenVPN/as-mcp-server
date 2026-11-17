@@ -494,3 +494,23 @@ async def test_mfa_for_the_own_account_needs_a_person_and_says_why(scratch) -> N
     assert str(declined.value) == MSG_CANCELLED
     assert f"Warning: {WARN_OWN_MFA.format(name=own)}" in seen[0]
     assert (await scratch.user_record(own))["totp"]["value"] is False
+
+
+async def test_auto_keeps_a_group_whose_member_would_lose_mfa(scratch) -> None:
+    group, name = scratch.group, scratch.user
+    await scratch.call("create_group", {"name": group, "totp": True})
+    await scratch.call("create_user", {"users": [{"username": name, "group": group}]})
+    with pytest.raises(ToolError) as refused:
+        await scratch.auto("delete_group", {"name": group})
+    assert str(refused.value) == MSG_AUTO_LIMIT.format(
+        reason=f"MFA would be switched off for user {name} when group {group} "
+        "is deleted"
+    )
+    assert await scratch.group_record(group) is not None
+    assert (await scratch.user_record(name))["totp"]["value"] is True
+    # A person can still approve it, and a group without members goes in auto.
+    deleted = await scratch.call("delete_group", {"name": group})
+    assert deleted["items"][0]["outcome"] == "done"
+    await scratch.call("create_group", {"name": group, "totp": True})
+    emptied = await scratch.auto("delete_group", {"name": group})
+    assert emptied["items"][0]["outcome"] == "done"

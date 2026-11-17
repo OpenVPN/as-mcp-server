@@ -45,9 +45,9 @@ groups, connection profiles and sessions. What protects the server then:
   administrator trusts. It is limited in code: no administrator rights are given, MFA is not
   switched off, no authentication method is changed, autologin is not switched on, no
   autologin profile or link is created, and a change whose result cannot be computed is
-  refused. Everything else, including deletes and blocks, is done without a question. That
-  has a consequence: deleting a group takes from its members what they inherited from it,
-  also MFA, an authentication method or a block, and deleting a user and creating it again
+  refused. Deleting a group is refused when a member would lose MFA, a block or its
+  authentication method with it. Everything else, including other deletes and blocks, is
+  done without a question. That has a consequence: deleting a user and creating it again
   gives a user without the old MFA enrollment. Do not combine `auto` with an agent that
   reads untrusted text.
 - **The account the server signs in with cannot be locked out** in either mode: not blocked,

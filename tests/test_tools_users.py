@@ -1728,12 +1728,55 @@ async def test_the_own_group_cannot_be_deleted(tmp_path: Path) -> None:
         assert server.written() == [] and "staff" in server.groups
 
 
-async def test_a_group_delete_is_allowed_in_auto_mode_also_with_mfa_members(
+@pytest.mark.parametrize(
+    ("group", "own", "reason"),
+    [
+        ("mfa", {}, "MFA would be switched off for user alice"),
+        ("blocked", {}, "user alice would no longer be blocked"),
+        (
+            "ldap",
+            {},
+            "the authentication method of user alice would change",
+        ),
+    ],
+)
+async def test_auto_refuses_a_group_delete_that_takes_protection_from_a_member(
+    tmp_path: Path, group: str, own: dict[str, Any], reason: str
+) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    server.groups["ldap"] = {"own": {"auth_method": "ldap"}}
+    server.users["alice"] = {"own": own, "group": group}
+    with pytest.raises(ToolError) as error:
+        await server.call("delete_group", {"name": group}, answer="none")
+    assert str(error.value) == MSG_AUTO_LIMIT.format(
+        reason=f"{reason} when group {group} is deleted"
+    )
+    assert server.written() == [] and group in server.groups
+    assert server.audit()[0]["outcome"] == "refused_auto_limit"
+
+
+async def test_auto_deletes_a_group_whose_members_keep_their_protection(
     tmp_path: Path,
 ) -> None:
     server = FakeServer(tmp_path, mode="auto")
-    server.users["alice"]["group"] = "mfa"
+    # alice sets MFA herself, bob inherits nothing that protects him, and a group
+    # without members has nobody to lose anything.
+    server.users["alice"] = {"own": {"totp": True}, "group": "mfa"}
     result = await server.call("delete_group", {"name": "mfa"}, answer="none")
+    assert only(result)["outcome"] == "done" and "mfa" not in server.groups
+    server.users["bob"]["group"] = "staff"
+    result = await server.call("delete_group", {"name": "staff"}, answer="none")
+    assert only(result)["outcome"] == "done"
+    result = await server.call("delete_group", {"name": "blocked"}, answer="none")
+    assert only(result)["outcome"] == "done"
+
+
+async def test_a_person_can_approve_a_group_delete_that_lowers_mfa(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["alice"]["group"] = "mfa"
+    result = await server.call("delete_group", {"name": "mfa"})
     assert only(result)["outcome"] == "done" and "mfa" not in server.groups
 
 

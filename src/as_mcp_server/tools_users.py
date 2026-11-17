@@ -41,7 +41,7 @@ from as_mcp_server.effective import (
     snapshot,
     user_after,
 )
-from as_mcp_server.guards import Effect
+from as_mcp_server.guards import Effect, auto_limit_reason
 from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import MSG_USE_BLOCK
@@ -845,6 +845,7 @@ class _DeleteGroup:
     action: str = "Delete group"
     note: str = NOTE_LIVE
     needs_output_dir: bool = False
+    _records: list[dict[str, Any]] = field(default_factory=list)
 
     def key(self, item: str) -> str:
         return item.casefold()
@@ -856,7 +857,35 @@ class _DeleteGroup:
         group = await read_group(client, item, members=True)
         members = group.get("members")
         names = sorted(str(m) for m in members) if isinstance(members, list) else []
+        self._records = await _members(client, item) if names else []
         return {**_state(group), "members": names}
+
+    def _auto_reason(self, item: str, own: Own) -> str | None:
+        """What a member loses with the group that is never taken without a person."""
+        effects = []
+        for member in self._records:
+            alone = user_after(
+                {**member, "group": None}, {}, [], None, own.base, fields=FIELDS
+            )
+            effects.append(
+                Effect(
+                    "user",
+                    str(member["name"]),
+                    _guarded(_state(member)),
+                    _guarded(alone),
+                )
+            )
+        reason = auto_limit_reason(effects)
+        if reason is None:
+            reason = next(
+                (
+                    f"user {effect.name} would no longer be blocked"
+                    for effect in effects
+                    if effect.before["deny"] is True and effect.after["deny"] is False
+                ),
+                None,
+            )
+        return None if reason is None else f"{reason} when group {item} is deleted"
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
         members = before["members"]
@@ -876,6 +905,7 @@ class _DeleteGroup:
                 (*lost, "the group's access list is deleted", "cannot be undone"),
             ),
             (Effect("group", item, _guarded(before), None),),
+            self._auto_reason(item, own),
         )
 
     async def apply(
@@ -1292,7 +1322,9 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "block or MFA set on the group); their running VPN sessions stay "
             "connected. The group's access list is deleted. Cannot be undone. "
             "The group of the account this server signs in with cannot be "
-            "deleted. The result lists members_without_group." + RESULT_HELP
+            "deleted. In automatic approval mode the delete is refused when a "
+            "member would lose MFA, a block or its authentication method with "
+            "the group. The result lists members_without_group." + RESULT_HELP
         ),
         annotations=DESTRUCTIVE,
         tags={"write"},

@@ -218,9 +218,9 @@ where you trust the agent and its inputs. Even then the server never: gives admi
 rights, switches MFA off, changes an authentication method, switches autologin on, creates an
 autologin profile or link, switches MFA on for the account it signs in with itself, or makes
 a change whose result it cannot compute. These are
-refused with the reason; make them in an app that shows the approval prompt. Deletes are not
-limited: deleting a user or a group is done without a question, and deleting a group takes
-from its members everything they inherited from it, also MFA or a block set on the group.
+refused with the reason; make them in an app that shows the approval prompt. Deleting a user
+is done without a question. Deleting a group is done without a question too, unless a member
+would lose MFA, a block or its authentication method with the group; then it is refused.
 
 **The agent's own account is protected in every mode.** A change that would block, delete or
 demote the account as-mcp-server signs in with, move it to another group, change its
