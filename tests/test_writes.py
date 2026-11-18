@@ -295,7 +295,7 @@ async def test_an_approved_change_is_written_read_back_and_recorded(
     }
     assert seen == [
         "Server: https://as.example:943\n"
-        "Action: Change thing (1 item)\n"
+        "Action: Change thing (1 item): a\n"
         "\n"
         "- a\n"
         "    value: 1 -> 2"
@@ -942,8 +942,7 @@ def test_the_fixed_texts_are_the_ones_agreed_in_the_design() -> None:
         "being asked."
     )
     assert texts.MSG_CHANGED == (
-        "Changed on the server since the preview; nothing was written. Run the "
-        "request again."
+        "Changed on the server since the preview; nothing was written."
     )
     assert texts.MSG_LOCKOUT == (
         "Refused: this change would lock as-mcp-server out of its own admin account "

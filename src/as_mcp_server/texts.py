@@ -9,10 +9,7 @@ MSG_NO_ELICITATION = (
     "OPENVPN_AS_APPROVAL=auto in the MCP server settings to make changes without "
     "being asked."
 )
-MSG_CHANGED = (
-    "Changed on the server since the preview; nothing was written. Run the request "
-    "again."
-)
+MSG_CHANGED = "Changed on the server since the preview; nothing was written."
 MSG_LOCKOUT = (
     "Refused: this change would lock as-mcp-server out of its own admin account "
     "({name}). Make it in the Admin UI if it is really intended."
@@ -20,6 +17,23 @@ MSG_LOCKOUT = (
 MSG_AUTO_LIMIT = (
     "Refused in automatic approval mode: {reason}. Repeat it in an app that shows "
     "the approval prompt, or in the Admin UI."
+)
+MSG_RESTART_NEEDS_PROMPT = (
+    "Refused: a warm restart always needs the administrator's approval, and your AI "
+    "app cannot show an approval prompt. Nothing was restarted. Use an app that "
+    "supports MCP elicitation."
+)
+NOTE_RESTARTED = (
+    "Access Server was restarted (warm). Connected VPN clients may have been "
+    "disconnected and reconnect by themselves. Groups created before the restart "
+    "work now."
+)
+WARN_GROUP_RESTART = (
+    "the group applies fully to the user only after a warm restart (warm_restart)"
+)
+NOTE_GROUP_RESTART = (
+    "A user put into a group gets everything from the group only after a warm "
+    "restart; ask the administrator whether to run warm_restart."
 )
 WARN_OWN_MFA = (
     "the account as-mcp-server signs in with ({name}) will need an MFA code at the "

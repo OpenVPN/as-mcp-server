@@ -18,6 +18,7 @@ from fastmcp.exceptions import ToolError
 
 from as_mcp_server import approval, outputs, tools_profiles
 from as_mcp_server.outputs import DELIVERY_REMINDER
+from as_mcp_server.preview import clean
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import MSG_AUTO_LIMIT, MSG_CANCELLED, MSG_CHANGED
@@ -220,7 +221,8 @@ async def test_a_created_profile_goes_to_a_file_and_never_into_the_result(
     )
     assert seen[0] == (
         "Server: https://as.example:943\n"
-        "Action: Create a userlogin connection profile (1 item)\n"
+        "Action: Create a userlogin connection profile (1 item): alice\n"
+        f"Total: {clean('the profile file is saved in ' + str(server.out), 100)}\n"
         "\n"
         "- alice\n"
         "    connection profiles: 1 -> 2\n"
@@ -513,9 +515,16 @@ async def test_the_link_appears_in_no_result_preview_audit_line_or_log(
     assert_no_secret(
         json.dumps(result), "\n".join(seen), server.audit_text(), caplog.text
     )
+    revoked = (
+        "cannot be revoked, valid until about 2026-11-14T12:00:00+00:00, 1 use(s); "
+        "blocking the user later does not stop the link; profiles already "
+        "downloaded through it can be deleted"
+    )
     assert seen[0] == (
         "Server: https://as.example:943\n"
-        "Action: Create a userlogin profile download link (2 items)\n"
+        "Action: Create a userlogin profile download link (2 items): alice, bob\n"
+        f"Total: {clean(revoked, 100)}, "
+        f"{clean('the link is saved to a file in ' + str(server.out), 100)}\n"
         "\n"
         "- alice\n"
         "    download link: (not set) -> valid until about 2026-11-14T12:00:00+00:00, "
@@ -690,7 +699,9 @@ async def test_profiles_are_deleted_by_serial_after_the_admin_saw_whose_they_are
     )
     assert seen[0] == (
         "Server: https://as.example:943\n"
-        "Action: Delete connection profiles (1 item)\n"
+        "Action: Delete connection profiles (1 item): 2 connection profiles\n"
+        'Total: delete 21 (bob, userlogin, comment "phone"), '
+        'delete 1810972200425098125 (alice, userlogin, comment "laptop")\n'
         "\n"
         "- 2 connection profiles\n"
         '    also: delete 21 (bob, userlogin, comment "phone")\n'

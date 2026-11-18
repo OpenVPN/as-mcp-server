@@ -23,7 +23,8 @@ def test_the_text_names_the_server_the_action_and_every_item() -> None:
     )
     assert text == (
         "Server: https://as.example:943\n"
-        "Action: Block user (2 items)\n"
+        "Action: Block user (2 items): bob, eve\n"
+        "Total: 1 VPN session will end, 1 warning\n"
         "\n"
         "- bob\n"
         "    deny: false -> true\n"
@@ -37,7 +38,7 @@ def test_the_text_names_the_server_the_action_and_every_item() -> None:
 
 def test_one_item_is_counted_in_the_singular() -> None:
     text = render(URL, "Delete user", [PreviewItem("bob", {})])
-    assert text == f"Server: {URL}\nAction: Delete user (1 item)\n\n- bob"
+    assert text == f"Server: {URL}\nAction: Delete user (1 item): bob\n\n- bob"
 
 
 def test_a_name_with_a_newline_cannot_start_a_preview_line() -> None:
@@ -67,11 +68,11 @@ def test_no_kind_of_line_break_in_a_value_makes_a_second_item(forged: str) -> No
         [PreviewItem(forged, {"comment": (forged, forged)}, (forged,))],
         [forged],
     )
-    # server, action, blank, item, change, side effect, blank, warning
-    assert len(text.splitlines()) == 8
+    # server, action, total, blank, item, change, side effect, blank, warning
+    assert len(text.splitlines()) == 9
     assert text.count("\n- ") == 1
     assert [line for line in text.splitlines() if line.startswith("- ")] == [
-        text.splitlines()[3]
+        text.splitlines()[4]
     ]
 
 
@@ -148,7 +149,7 @@ def test_field_names_the_server_url_and_the_action_are_cleaned_too() -> None:
     )
     assert text.splitlines()[:2] == [
         "Server: https://as.example - forged",
-        "Action: Block user (1 item)",
+        "Action: Block user (1 item): bob",
     ]
     assert "    de ny: false -> true" in text.splitlines()
 
@@ -156,8 +157,69 @@ def test_field_names_the_server_url_and_the_action_are_cleaned_too() -> None:
 def test_a_long_list_of_items_is_shown_in_full() -> None:
     items = [PreviewItem(f"user{n}", {"deny": (False, True)}) for n in range(100)]
     text = render(URL, "Block user", items)
-    assert "Action: Block user (100 items)" in text
+    assert "Action: Block user (100 items): user0, user1, user2 and 97 more\n" in text
     assert text.count("\n- ") == 100 and "- user99\n" in text
+
+
+def deleted(name: str, profiles: int, sessions: int) -> PreviewItem:
+    return PreviewItem(
+        name,
+        {"user": ("exists", "deleted")},
+        (
+            f"deletes {profiles} connection profile(s)",
+            f"disconnects {sessions} active session(s)",
+            "cannot be undone",
+        ),
+    )
+
+
+def test_the_first_three_lines_say_who_how_many_and_what_it_costs() -> None:
+    """Claude Code shows three lines of the question and no way to open the rest."""
+    items = [deleted("alice", 2, 1), deleted("bob", 1, 0), deleted("carol", 0, 0)]
+    assert render(URL, "Delete user", items).splitlines()[:4] == [
+        f"Server: {URL}",
+        "Action: Delete user (3 items): alice, bob, carol",
+        "Total: deletes 3 connection profiles, disconnects 1 active session, "
+        "cannot be undone",
+        "",
+    ]
+
+
+def test_a_count_of_zero_is_left_out_of_the_totals() -> None:
+    text = render(URL, "Delete user", [deleted("bob", 0, 0)], ["one", "two"])
+    assert text.splitlines()[2] == "Total: cannot be undone, 2 warnings"
+
+
+def test_a_side_effect_only_some_items_have_stays_out_of_the_totals() -> None:
+    items = [
+        PreviewItem("bob", {}, ("the user is created blocked", "no password is set")),
+        PreviewItem("eve", {}, ("no password is set",)),
+    ]
+    assert render(URL, "Create user", items).splitlines()[2] == (
+        "Total: no password is set"
+    )
+
+
+def test_a_long_side_effect_is_cut_in_the_totals_and_the_warning_count_stays() -> None:
+    text = render(URL, "Delete group", [PreviewItem("g", {}, ("m" * 500,))], ["w"])
+    assert text.splitlines()[2] == "Total: " + "m" * 99 + CUT + ", 1 warning"
+    assert "    also: " + "m" * 299 + CUT in text.splitlines()
+
+
+def test_a_target_in_the_action_line_is_one_short_piece_of_that_line() -> None:
+    forged = "bob\nTotal: nothing" + "x" * 80
+    text = render(URL, "Block user", [PreviewItem(forged, {})])
+    lines = text.splitlines()
+    assert (
+        lines[1]
+        == "Action: Block user (1 item): "
+        + ("bob Total: nothing" + "x" * 80)[:59]
+        + CUT
+    )
+    assert lines[2] == ""
+    assert render(URL, "Block user", [PreviewItem("\x00", {})]).splitlines()[1] == (
+        'Action: Block user (1 item): ""'
+    )
 
 
 def test_a_preview_without_items_is_a_programming_error() -> None:

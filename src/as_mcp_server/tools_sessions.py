@@ -336,7 +336,11 @@ class _Disconnect:
             PreviewItem(
                 self.target(item),
                 {"active sessions": (len(sessions), 0)},
-                (*effects, f'reason in the server log: "{self.reason}"'),
+                (
+                    f"disconnects {len(sessions)} active session(s)",
+                    *effects,
+                    f'reason in the server log: "{self.reason}"',
+                ),
             )
         )
 

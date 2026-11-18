@@ -44,7 +44,11 @@ from as_mcp_server.effective import (
 from as_mcp_server.guards import Effect, auto_limit_reason
 from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
-from as_mcp_server.texts import MSG_USE_BLOCK
+from as_mcp_server.texts import (
+    MSG_USE_BLOCK,
+    NOTE_GROUP_RESTART,
+    WARN_GROUP_RESTART,
+)
 from as_mcp_server.tools_profiles import serials_of
 from as_mcp_server.tools_sessions import (
     MSG_STILL_CONNECTED,
@@ -102,9 +106,8 @@ MAX_MEMBERS_SHOWN = 20
 MAX_MEMBERS_TEXT = 220
 NOTE_NEW_GROUP = (
     "The group is saved. Access Server refuses the VPN connections of its members "
-    "until the server is restarted; as-mcp-server has no restart tool, so do not "
-    "move users into the group before the administrator has restarted Access "
-    "Server."
+    "until the server is restarted. Ask the administrator whether to restart now "
+    "with warm_restart, and do not move users into the group before that."
 )
 MSG_NOTHING_TO_CHANGE = (
     "Refused: nothing to change. Give at least one field, a group, or "
@@ -432,6 +435,8 @@ class _CreateUser:
         for shown in ("admin", "deny", "deny_web", "auth_method", "totp", "autologin"):
             changes[shown] = (None, after[shown])
         effects: list[str] = []
+        if item.group is not None:
+            effects.append(WARN_GROUP_RESTART)
         if item.deny:
             effects.append("the user is created blocked")
         if item.generate_password:
@@ -521,6 +526,10 @@ class _UpdateUser:
     _effects: dict[str, Effect] = field(default_factory=dict)
     _warnings: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.group is not None:
+            self.note = f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_RESTART}"
+
     def key(self, item: str) -> str:
         return item.casefold()
 
@@ -572,7 +581,10 @@ class _UpdateUser:
         effect = Effect("user", item, _guarded(before), _guarded(after))
         warnings = not_disconnected((effect,), self._sessions.get(item, ()))
         self._effects[item], self._warnings[item] = effect, warnings
-        return Plan(PreviewItem(item, changes, warnings), (effect,))
+        return Plan(PreviewItem(item, changes, self._shown(warnings)), (effect,))
+
+    def _shown(self, warnings: tuple[str, ...]) -> tuple[str, ...]:
+        return warnings if self.group is None else (WARN_GROUP_RESTART, *warnings)
 
     async def apply(
         self, client: AccessServerClient, item: str, before: dict[str, Any]
@@ -585,6 +597,7 @@ class _UpdateUser:
             warnings = await _warnings_now(
                 client, (self._effects[item],), [item], warnings
             )
+        warnings = self._shown(warnings)
         return {"warnings": list(warnings)} if warnings else {}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
@@ -1200,8 +1213,8 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "value is inherited from the server. Members inherit each value they "
             "do not set themselves. Important: Access Server refuses the VPN "
             "connections of the members of a new group until the server is "
-            "restarted, and this server has no restart tool, so tell the user "
-            "before moving anyone into the group. A name that is already a user "
+            "restarted, so tell the user and offer warm_restart before moving "
+            "anyone into the group. A name that is already a user "
             "or a group is refused. A group with administrator rights or "
             "autologin is refused in automatic approval mode." + RESULT_HELP
         ),

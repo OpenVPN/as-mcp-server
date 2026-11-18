@@ -18,6 +18,7 @@ from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.settings import Settings
 from as_mcp_server.tools import register_tools
 from as_mcp_server.tools_profiles import register_profile_tools
+from as_mcp_server.tools_restart import register_restart_tools
 from as_mcp_server.tools_sessions import register_session_tools
 from as_mcp_server.tools_users import register_user_tools
 from as_mcp_server.writes import WriteDeps
@@ -113,6 +114,10 @@ WRITE_OPENING = (
     "prefer one list call\n"
     "over many single calls.\n"
     "To block a user, use block_user; it also disconnects the user's sessions.\n"
+    "A new group, and a user moved into a group, work fully only after a warm "
+    "restart of Access Server:\n"
+    "say so and offer warm_restart. Call it only when the user asks or agrees; it "
+    "asks for approval in every mode.\n"
 )
 # The read-only opening ends where the troubleshooting advice starts.
 _SHARED_FROM = "Start with connection_info when anything looks wrong"
@@ -128,6 +133,7 @@ def register_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     register_profile_tools(mcp, deps)
     register_session_tools(mcp, deps)
     register_user_tools(mcp, deps)
+    register_restart_tools(mcp, deps)
 
 
 def build(

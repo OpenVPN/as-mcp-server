@@ -179,7 +179,7 @@ are strings of digits (they are too large for a JSON number).
 
 ## Write mode
 
-Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers twelve more tools:
+Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers thirteen more tools:
 
 | Tool | What it does | Parameters |
 | --- | --- | --- |
@@ -195,6 +195,7 @@ Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers twelve m
 | `create_group` | Create a group | `name` and the group fields |
 | `update_group` | Change one group | `name`, the group fields, `reset_to_inherited` |
 | `delete_group` | Delete one group; its members stay as users | `name` |
+| `warm_restart` | Warm restart of Access Server; always asks for approval | - |
 
 How to switch it on, for Claude Code:
 
@@ -207,11 +208,27 @@ How to switch it on, for Claude Code:
 the action, every target with `field: before -> after`, and the side effects) and asks for a
 yes. This uses MCP elicitation, so the question is asked by your AI app, not by the model; the
 model cannot answer it. Decline or cancel and nothing changes. The state is read again after
-your yes; if someone changed it in the meantime the write is refused and you are asked to run
-the request again. An app that cannot show the question gets this answer and nothing changes:
+your yes; if someone changed it in the meantime the write is refused with "Changed on the
+server since the preview; nothing was written." and the agent stops; ask again if you still
+want the change. An app that cannot show the question gets this answer and nothing changes:
 "Your AI app cannot show an approval prompt, so as-mcp-server did not make this change. Use
 an app that supports MCP elicitation, or set OPENVPN_AS_APPROVAL=auto in the MCP server
 settings to make changes without being asked."
+
+**What your app shows of the question.** Apps differ, so the first three lines carry the
+most: the server, the action with the number of targets and the first three names, and a
+`Total:` line (for example `Total: deletes 3 connection profiles, disconnects 1 active
+session, cannot be undone, 1 warning`). The values that change (`field: before -> after`)
+come after these lines. As tested for this release:
+
+- Claude Code 2.1.325 shows only the first three lines ("... (+N more lines)") and has no
+  key to open the rest.
+- Codex 0.169.0 shows as many lines as fit the height of the terminal window.
+- Claude Desktop 5.11492.5 does not show the question at all, so it can write only with
+  `OPENVPN_AS_APPROVAL=auto`.
+
+What the agent says afterwards is the model's own wording. In one test run an agent
+reported a cancelled change as done; `audit.jsonl` (below) says what really happened.
 
 **Automatic approval.** `OPENVPN_AS_APPROVAL=auto` makes changes without asking. Use it only
 where you trust the agent and its inputs. Even then the server never: gives administrator
@@ -221,6 +238,14 @@ a change whose result it cannot compute. These are
 refused with the reason; make them in an app that shows the approval prompt. Deleting a user
 is done without a question. Deleting a group is done without a question too, unless a member
 would lose MFA, a block or its authentication method with the group; then it is refused.
+
+**Restart.** No tool restarts Access Server by itself. Two changes work fully only after a
+warm restart: a new group (its members cannot connect until then) and a user put into a
+group. The tools say so in the approval question and in the result, and `warm_restart` does
+the restart when you ask for it. It asks for your approval every time, also with
+`OPENVPN_AS_APPROVAL=auto`, and the question says how many VPN clients are connected: a warm
+restart can disconnect them, and they have to reconnect. An app that cannot show the
+question (Claude Desktop) cannot restart.
 
 **The agent's own account is protected in every mode.** A change that would block, delete or
 demote the account as-mcp-server signs in with, move it to another group, change its
@@ -264,8 +289,8 @@ tested list; below 3.1, or when the version cannot be read, writes are refused.
 Known limits of this release:
 
 - Access Server refuses the VPN connections of the members of a **new group** until the server
-  is restarted (measured on 3.1.0 and 3.2.4). `create_group` says so; this release has no
-  restart tool.
+  is restarted (measured on 3.1.0 and 3.2.4). `create_group` says so; restart with
+  `warm_restart`. The server cannot tell whether a group still waits for a restart.
 - Download links cannot be listed or revoked. Blocking the user later does not stop an unused
   link, though the downloaded profile cannot connect while the user is blocked.
 - A user cannot be taken out of every group, and an existing user cannot get a new password.

@@ -11,11 +11,13 @@ Write mode: an administrator can let the agent change users, groups, connection 
 and sessions. It is off by default, and every change is shown for approval first.
 
 ### Added
-- Setting `OPENVPN_AS_WRITE_TOOLS` (default `false`): `true` registers twelve more tools.
+- Setting `OPENVPN_AS_WRITE_TOOLS` (default `false`): `true` registers thirteen more tools.
   `OPENVPN_AS_APPROVAL` (`prompt` or `auto`) and `OPENVPN_AS_OUTPUT_DIR`. The first two are
   shown by `connection_info` and `as-mcp-server check`.
 - The approval question: before a change is written the server shows the server, the action,
   every target with `before -> after` and the side effects, and asks through MCP elicitation.
+  Its first three lines carry the server, the action with the count and the first names, and
+  the totals, because some apps show no more than that.
   The answer is bound to the call and to the state that was shown; a changed state is read
   again and refused. An app that cannot ask gets a fixed message and nothing changes.
 - Automatic approval (`OPENVPN_AS_APPROVAL=auto`) with hard limits: nobody becomes an
@@ -58,6 +60,11 @@ and sessions. It is off by default, and every change is shown for approval first
   (IPv4 access lists of users and groups, with a note that the global IP/subnet rules are
   server settings read with `get_status_overview`, and that IPv6 access lists are not
   returned by the API).
+- `warm_restart`: a warm restart of Access Server, for a new group or a user put into a
+  group. No other tool restarts the server. It asks for approval in every mode, also with
+  `OPENVPN_AS_APPROVAL=auto`, and the question says how many VPN clients are connected.
+  `create_group`, `create_user` with a group and `update_user` with a group say that a warm
+  restart is needed.
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
@@ -70,7 +77,10 @@ and sessions. It is off by default, and every change is shown for approval first
   `get_status_overview` for the global IP/subnet rules (the configuration keys
   `vpn.server.routing.private_network.<N>` and `vpn.server.routing.private_access`)
   instead of to the Admin UI.
-- The thirteen tools of 0.1.0 are unchanged, in both modes.
+- The thirteen tools of 0.1.0 are unchanged, in both modes, except one description:
+  `get_server_info` now says that its hostname is the machine's name and that the address
+  VPN clients connect to is the configuration key `host.name` (an agent answered "what is
+  the host name" with the container name).
 - An Access Server version that cannot be read is treated as below the supported minimum.
 - FastMCP 4.1 or newer is required.
 - Tested on Access Server 3.1.0 and 3.2.4.

@@ -20,6 +20,7 @@ from fastmcp.exceptions import ToolError
 from as_mcp_server import approval, tools_sessions
 from as_mcp_server.guards import Effect
 from as_mcp_server.outputs import DELIVERY_REMINDER
+from as_mcp_server.preview import clean
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
@@ -223,7 +224,8 @@ async def test_block_sets_deny_before_it_disconnects(tmp_path: Path, mode: str) 
     assert result["notes"] == [NOTE_LIVE]
     assert seen[0] == (
         "Server: https://as.example:943\n"
-        "Action: Block user (1 item)\n"
+        "Action: Block user (1 item): alice\n"
+        f"Total: disconnects 2 active sessions, {clean(NOTE_DOWNLOAD_LINK, 100)}\n"
         "\n"
         "- alice\n"
         "    deny: false -> true\n"
@@ -444,10 +446,13 @@ async def test_three_users_send_three_disconnect_requests_with_one_target_each(
     assert len(seen) == 1
     assert seen[0].startswith(
         "Server: https://as.example:943\n"
-        "Action: Disconnect VPN sessions (3 items)\n"
+        "Action: Disconnect VPN sessions (3 items): alice, bob, openvpn\n"
+        "Total: disconnects 4 active sessions, "
+        f'reason in the server log: "{DEFAULT_REASON}"\n'
         "\n"
         "- alice\n"
         "    active sessions: 2 -> 0\n"
+        "    also: disconnects 2 active session(s)\n"
         "    also: disconnect openvpn_1/0 (alice)\n"
         "    also: disconnect openvpn_2/1 (alice)\n"
         f'    also: reason in the server log: "{DEFAULT_REASON}"\n'

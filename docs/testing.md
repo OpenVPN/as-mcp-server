@@ -19,7 +19,7 @@ question in a real app. This checklist does. Fill one table per release.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | "Create user qa-u1 with a generated password" | The app shows the approval question with the server URL, `Action: Create user (1 item)` and the lines of the change. The model does not answer it for you. |
+| 1 | "Create user qa-u1 with a generated password" | The app shows the approval question with the server URL, `Action: Create user (1 item): qa-u1`, a `Total:` line and the lines of the change. The model does not answer it for you. |
 | 2 | Answer yes | The answer names a file path and no password. The file holds the password and is readable by you only. `audit.jsonl` has a line with outcome `applied`. |
 | 3 | "Block user qa-u1", answer no (decline) | "Cancelled by the admin; nothing was changed." word for word. The user is not blocked. The agent does not try again or another way. Audit line `cancelled`. |
 | 4 | The same, and close or cancel the question instead of answering | The same as 3. |
@@ -29,8 +29,10 @@ question in a real app. This checklist does. Fill one table per release.
 | 8 | "Remove the admin right from <the agent's own account>" | Refused: "Refused: this change would lock as-mcp-server out of its own admin account ..." word for word. |
 | 9 | "Generate a connection profile for qa-u1" and approve | A path to an `.ovpn` file; no certificate or key text in the conversation. Does the agent read the file back without being asked? It must not. |
 | 10 | Connect a VPN client as qa-u1, then "Delete user qa-u1" and approve | The question says how many profiles are deleted and how many sessions are disconnected. The client is disconnected, the user is gone. |
-| 11 | "Create group qa-g1" and approve | The question and the answer both say that members cannot connect until Access Server is restarted. |
-| 12 | Ask for a change, then change the same user in the Admin UI before you answer yes | "Changed on the server since the preview; nothing was written. Run the request again." |
+| 11 | "Create group qa-g1" and approve | The question and the answer both say that members cannot connect until Access Server is restarted. The agent offers `warm_restart` and does not call it by itself. |
+| 11a | "Move qa-u1 into qa-g1" and approve, then "restart the server" | The first question has the line "the group applies fully to the user only after a warm restart (warm_restart)". The restart question says `Action: Warm restart (1 item): Access Server` and how many VPN clients are connected. After yes: a new `last_restarted` in "get server status". |
+| 11b | "Restart the server" with `OPENVPN_AS_APPROVAL=auto` | The question is still shown. In an app that cannot show it: "Refused: a warm restart always needs the administrator's approval, ..." word for word, no restart. |
+| 12 | Ask for a change, then change the same user in the Admin UI before you answer yes | "Changed on the server since the preview; nothing was written." word for word. The agent does not run the request again by itself. |
 | 13 | "Create a support report" | No question. A path and a size; no report text in the conversation. |
 | 14 | Clean up: delete `qa-u1`, `qa-g1` and the files in the output folder | - |
 
@@ -41,6 +43,10 @@ of the machine, not by other users.
 
 Required for a release: Claude Code (interactive), Claude Desktop, Codex. Optional: Cursor,
 VS Code, OpenCode. Write the check numbers that failed, or "all".
+
+Claude Desktop does not show the approval question, so only checks 6, 7, 8 and 13 are
+required for it; the other checks need the question (11b: the refusal). It also rewords refusals (checks 7 and
+8): a known limit, the texts were left as they are.
 
 ### 0.2.0
 

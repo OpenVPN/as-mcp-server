@@ -19,6 +19,7 @@ from as_mcp_server.texts import (
     MSG_CANCELLED,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
+    WARN_GROUP_RESTART,
     WARN_OWN_MFA,
 )
 from as_mcp_server.tools_users import NOTE_NEW_GROUP
@@ -439,7 +440,8 @@ async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_s
         "update_user", {"usernames": [name], "group": scratch.group2}, seen=seen
     )
     (item,) = result["items"]
-    assert item["outcome"] == "done" and item["warnings"] == [line]
+    assert item["outcome"] == "done"
+    assert item["warnings"] == [WARN_GROUP_RESTART, line]
     assert f"also: {line}" in seen[0] and "    deny: false -> true" in seen[0]
     assert "sessions" not in item["before"]
     assert client.running()

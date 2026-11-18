@@ -238,7 +238,10 @@ def _register_status_tools(mcp: FastMCP, holder: ClientHolder) -> None:
         name="get_server_info",
         description=(
             "Access Server version, build, web UI version, bundled client version, "
-            "OS distribution, CPU architecture, core count and hostname."
+            "OS distribution, CPU architecture, core count and the hostname of "
+            "the machine (os_hostname). That is not the address VPN clients "
+            "connect to: read the configuration key 'host.name' with "
+            "get_status_overview for it."
         ),
         annotations=READ,
         tags={"read"},

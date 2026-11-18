@@ -43,6 +43,7 @@ from as_mcp_server.guards import (
 )
 from as_mcp_server.outputs import probe_output_dir
 from as_mcp_server.preview import PreviewItem, clean, render, shown_name
+from as_mcp_server.settings import Approval
 from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
@@ -206,6 +207,9 @@ class WriteOp[Item](Protocol):
     action: str
     note: str
     needs_output_dir: bool
+
+    # Optional: `always_ask = True` asks for approval in automatic mode too, and
+    # `msg_no_elicitation` replaces the answer for an app that cannot ask.
 
     def key(self, item: Item) -> str:
         """Casefolded identity of the item: for duplicates."""
@@ -395,10 +399,11 @@ async def run_write[Item](
     """Run one write tool call. See the module docstring for the order of steps."""
     settings = deps.holder.settings
     client = deps.holder.get()
+    mode: Approval = "prompt" if getattr(op, "always_ask", False) else settings.approval
     run = _Run(
         deps=deps,
         tool=op.tool,
-        approval=settings.approval,
+        approval=mode,
         server_url=client.config.url,
         admin_user=client.config.username,
     )
@@ -470,7 +475,7 @@ async def run_write[Item](
             predicted=True,
         )
     own_mfa = own_mfa_reason(own.name, effects)
-    if settings.approval == "auto":
+    if mode == "auto":
         reason = (
             next((plan.auto_reason for plan in plans if plan.auto_reason), None)
             or auto_limit_reason(effects)
@@ -491,13 +496,14 @@ async def run_write[Item](
     # 6. Show the change and ask.
     text = render(client.config.url, op.action, [p.preview for p in plans], warnings)
     befores = [row.before for row in rows]
-    decision = await ask(ctx, settings.approval, text, binding(op.tool, args, befores))
+    decision = await ask(ctx, mode, text, binding(op.tool, args, befores))
     if isinstance(decision, mcp_types.InputRequiredResult):
         return decision
     if decision is Decision.CANCELLED:
         raise run.refuse(rows, "cancelled", MSG_CANCELLED)
     if decision is Decision.NO_ELICITATION:
-        raise run.refuse(rows, "refused_no_approval", MSG_NO_ELICITATION)
+        message = getattr(op, "msg_no_elicitation", MSG_NO_ELICITATION)
+        raise run.refuse(rows, "refused_no_approval", message)
     if decision is Decision.STALE:
         raise run.refuse(rows, "refused_changed", MSG_CHANGED)
 
@@ -531,7 +537,7 @@ async def run_write[Item](
     notes = [*([op.note] if changed else []), *warnings, *run.problems]
     return {
         "tool": op.tool,
-        "approval": settings.approval,
+        "approval": mode,
         "batch_id": run.batch_id,
         "items": [
             {

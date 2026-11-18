@@ -27,6 +27,8 @@ from as_mcp_server.texts import (
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
+    NOTE_GROUP_RESTART,
+    WARN_GROUP_RESTART,
     WARN_OWN_MFA,
 )
 from as_mcp_server.tools_sessions import MSG_STILL_CONNECTED
@@ -926,7 +928,9 @@ async def test_a_move_to_another_group_shows_everything_that_changes(
     assert "deny:" not in text
     item = only(result)
     assert item["after"]["group"] == "mfa" and item["after"]["totp"] is True
-    assert "warnings" not in item
+    assert f"    also: {WARN_GROUP_RESTART}" in text
+    assert item["warnings"] == [WARN_GROUP_RESTART]
+    assert result["notes"] == [f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_RESTART}"]
 
 
 @pytest.mark.parametrize(
@@ -959,10 +963,13 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
     assert f"    also: {line}" in seen[0]
     assert "    deny: false -> true" in seen[0]
     alice, carol = result["items"]
-    assert alice["outcome"] == "done" and alice["warnings"] == [line]
+    assert alice["outcome"] == "done" and alice["warnings"] == [
+        WARN_GROUP_RESTART,
+        line,
+    ]
     # Sessions come and go by themselves: they are not part of the approved state.
     assert "sessions" not in alice["before"]
-    assert "warnings" not in carol  # blocked too, but has no session
+    assert carol["warnings"] == [WARN_GROUP_RESTART]  # blocked too, no session
     assert MSG_NOT_DISCONNECTED.format(name="carol") not in seen[0]
     assert server.sent(DISCONNECT) == []  # update_user never disconnects
     # bob sets deny=false himself, so the group's block does not reach him
@@ -971,7 +978,8 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
     result = await server.call(
         "update_user", {"usernames": ["bob"], "group": "blocked"}, seen=seen
     )
-    assert "also:" not in seen[0] and "warnings" not in only(result)
+    assert seen[0].count("also:") == 1
+    assert only(result)["warnings"] == [WARN_GROUP_RESTART]
 
 
 async def test_resetting_deny_to_an_inherited_true_names_the_connected_user(
@@ -1003,7 +1011,10 @@ async def test_a_session_that_begins_during_the_prompt_is_named_after_the_write(
     )
     item = only(result)
     assert item["outcome"] == "done"
-    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
+    assert item["warnings"] == [
+        WARN_GROUP_RESTART,
+        MSG_NOT_DISCONNECTED.format(name="alice"),
+    ]
 
 
 async def test_a_session_that_ended_during_the_prompt_is_no_longer_named(
@@ -1026,7 +1037,8 @@ async def test_a_session_that_ended_during_the_prompt_is_no_longer_named(
             )
         ).structured_content
     assert MSG_NOT_DISCONNECTED.format(name="alice") in seen[0]
-    assert only(result)["outcome"] == "done" and "warnings" not in only(result)
+    assert only(result)["outcome"] == "done"
+    assert only(result)["warnings"] == [WARN_GROUP_RESTART]
 
 
 async def test_warnings_fall_back_to_the_preview_when_sessions_cannot_be_read_again(
@@ -1050,7 +1062,10 @@ async def test_warnings_fall_back_to_the_preview_when_sessions_cannot_be_read_ag
     )
     item = only(result)
     assert item["outcome"] == "done"
-    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
+    assert item["warnings"] == [
+        WARN_GROUP_RESTART,
+        MSG_NOT_DISCONNECTED.format(name="alice"),
+    ]
 
 
 async def test_a_group_that_changes_during_the_prompt_is_a_changed_state(
@@ -1691,7 +1706,7 @@ async def test_a_long_member_list_is_cut_in_the_preview(tmp_path: Path) -> None:
     seen: list[str] = []
     result = await server.call("delete_group", {"name": "mfa"}, seen=seen)
     wanted = "members that lose this group"
-    (line,) = [text for text in seen[0].splitlines() if wanted in text]
+    (line,) = [text for text in seen[0].splitlines()[3:] if wanted in text]
     assert line.endswith("m18 and 6 more")
     assert "evil name, m00, m01" in line
     assert len(only(result)["members_without_group"]) == 26
@@ -1706,7 +1721,7 @@ async def test_long_member_names_never_push_the_count_out_of_the_preview(
     seen: list[str] = []
     await server.call("delete_group", {"name": "mfa"}, seen=seen)
     wanted = "members that lose this group"
-    (line,) = [text for text in seen[0].splitlines() if wanted in text]
+    (line,) = [text for text in seen[0].splitlines()[3:] if wanted in text]
     assert line.endswith(" and 9 more") and len(line) < 300
     assert line.count("nnnn" + chr(0x2026)) == 3  # each name cut to 60 characters
 
@@ -1954,7 +1969,7 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
         for name, tool in tools.items()
         if tool.annotations.read_only_hint is False and name != "login"
     ]
-    assert len(flow) == 11
+    assert len(flow) == 12
     for name in flow:
         description = tools[name].description
         assert "unknown_after_timeout" in description, name

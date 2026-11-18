@@ -436,7 +436,13 @@ async def test_write_mode_swaps_the_opening_of_the_instructions_and_nothing_else
         "approval; prefer one list call",
         "over many single calls.",
         "To block a user, use block_user; it also disconnects the user's sessions.",
+        "A new group, and a user moved into a group, work fully only after a warm "
+        "restart of Access Server:",
+        "say so and offer warm_restart. Call it only when the user asks or agrees; "
+        "it asks for approval in every mode.",
     ]
+    # Claude Code cuts the instructions of a server at 4096 characters.
+    assert len(WRITE_INSTRUCTIONS) <= 4096
     assert "Read-only" not in WRITE_INSTRUCTIONS
     assert "This server cannot change anything" not in WRITE_INSTRUCTIONS
 
@@ -469,5 +475,6 @@ async def test_write_mode_adds_exactly_the_write_tools_built_so_far(
         "create_group",
         "update_group",
         "delete_group",
+        "warm_restart",
     }
     assert names >= EXPECTED_TOOLS

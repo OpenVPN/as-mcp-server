@@ -6,6 +6,7 @@ through `clean()`: one value is one piece of one line, whatever it contains.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -23,6 +24,11 @@ _DROPPED = {"Cc", "Cf", "Cs", "Co", "Cn"}
 _BRAILLE_BLANK = chr(0x2800)
 NAME_LIMIT = 300
 HIDDEN = " (the real name holds characters that are not shown here)"
+# Some apps show only the first three lines of the approval text.
+HEAD_NAMES = 3
+HEAD_NAME_LIMIT = 60
+HEAD_PART_LIMIT = 100
+_COUNTED = re.compile(r"(?:(\w+) )?(\d+) (\D+)")
 
 
 def clean(text: Any, limit: int = 120) -> str:
@@ -72,11 +78,23 @@ def render(
     items: Sequence[PreviewItem],
     warnings: Sequence[str] = (),
 ) -> str:
-    """The approval text: the server, the action, one block per item, the warnings."""
+    """The approval text. The first three lines carry the most: the server, the
+    action with the count and the first targets, the totals. Then one block per
+    item and the warnings."""
     if not items:
         raise ValueError("a preview has no items")
     count = "1 item" if len(items) == 1 else f"{len(items)} items"
-    lines = [f"Server: {clean(server_url)}", f"Action: {clean(action)} ({count})", ""]
+    names = [_head_name(item.target) for item in items[:HEAD_NAMES]]
+    more = len(items) - len(names)
+    targets = ", ".join(names) + (f" and {more} more" if more else "")
+    lines = [
+        f"Server: {clean(server_url)}",
+        f"Action: {clean(action)} ({count}): {targets}",
+    ]
+    total = _total(items, len(warnings))
+    if total:
+        lines.append(f"Total: {total}")
+    lines.append("")
     for item in items:
         lines.append(f"- {shown_name(item.target)}")
         for field, (before, after) in item.changes.items():
@@ -86,6 +104,41 @@ def render(
         lines.append("")
         lines.extend(f"Warning: {clean(warning, 300)}" for warning in warnings)
     return "\n".join(lines)
+
+
+def _head_name(target: Any) -> str:
+    return clean(target, HEAD_NAME_LIMIT) or '""'
+
+
+def _total(items: Sequence[PreviewItem], warnings: int) -> str:
+    """One line for all items: counted side effects ("deletes 2 connection
+    profile(s)") are added up, a side effect every item has is said once."""
+    sums: dict[tuple[str, str], int] = {}
+    shared: dict[str, int] = {}
+    order: list[tuple[str, str] | str] = []
+    for item in items:
+        for effect in dict.fromkeys(item.side_effects):
+            counted = _COUNTED.fullmatch(effect)
+            key: tuple[str, str] | str = effect
+            if counted:
+                key = (counted[1] or "", counted[3])
+                sums[key] = sums.get(key, 0) + int(counted[2])
+            else:
+                shared[effect] = shared.get(effect, 0) + 1
+            if key not in order:
+                order.append(key)
+    parts: list[str] = []
+    for key in order:
+        if isinstance(key, str):
+            if shared[key] == len(items):
+                parts.append(clean(key, HEAD_PART_LIMIT))
+        elif sums[key]:
+            verb, noun = key
+            noun = noun.replace("(s)", "" if sums[key] == 1 else "s")
+            parts.append(clean(f"{verb} {sums[key]} {noun}", HEAD_PART_LIMIT))
+    if warnings:
+        parts.append("1 warning" if warnings == 1 else f"{warnings} warnings")
+    return ", ".join(part for part in parts if part)
 
 
 def _named(text: Any) -> str:
