@@ -43,7 +43,7 @@ def docker(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
 def require_client_image() -> None:
     if shutil.which("docker") is None:
         pytest.skip("docker is needed to run a VPN client")
-    if not docker("image", "inspect", IMAGE).stdout.strip().startswith("["):
+    if docker("image", "inspect", IMAGE).returncode != 0:
         docker("build", "-q", "-t", IMAGE, str(ROOT / "dev" / SOURCE), check=True)
 
 

@@ -123,6 +123,18 @@ OpenVPN 3, and the full check before a merge runs the live tests once with each:
 and is checked by hand. A refused OpenVPN 2 client prints the server's reason
 (`AUTH_FAILED,DENY`); an OpenVPN 3 client prints only `User authentication failed`.
 
+A desktop client (OpenVPN Connect) on your own machine needs two extra lines in the profile:
+
+    pull-filter ignore "redirect-gateway"
+    pull-filter ignore "dhcp-option DNS"
+
+The stand tells every client to send all traffic through the VPN
+(`vpn.client.routing.reroute_gw=true`) and to use the DNS server `127.0.0.11`, which exists
+only inside a container. Without the two lines the machine loses its internet while
+connected. `prop_reroute_gw` on the user does not switch this off (tried `false` and
+`disable`, also after a warm restart, on 3.2.4). Compose publishes only the web port, so
+the VPN port has to be published too.
+
 The stand allows two VPN connections at
 a time (3.1.0 is unlicensed, 3.2.4 runs a trial), so stop a client with `docker stop`, not
 `docker kill`: a killed client stays in `/vpn/status` and keeps its slot until the server
