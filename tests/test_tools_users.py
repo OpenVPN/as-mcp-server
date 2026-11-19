@@ -36,6 +36,7 @@ from as_mcp_server.texts import (
 )
 from as_mcp_server.tools_sessions import MSG_STILL_CONNECTED
 from as_mcp_server.tools_users import (
+    EFFECT_KNOWN_GROUP,
     FIELDS,
     MSG_NOTHING_TO_CHANGE,
     NOTE_NEW_GROUP,
@@ -2171,3 +2172,47 @@ async def test_a_restart_time_that_cannot_be_read_does_not_stop_a_move(
         "update_user", {"usernames": ["alice"], "group": "ops"}, seen=seen
     )
     assert only(result)["outcome"] == "done" and "also:" not in seen[0]
+
+
+async def test_a_group_deleted_and_created_again_does_not_wait_for_a_restart(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    server.users["alice"]["group"] = None
+    await server.call("delete_group", {"name": "staff"})
+    seen: list[str] = []
+    prompt = FakeServer(tmp_path)
+    prompt.users, prompt.groups = server.users, server.groups
+    result = await prompt.call("create_group", {"name": "Staff"}, seen=seen)
+    assert f"    also: {EFFECT_KNOWN_GROUP}" in seen[0]
+    assert "cannot connect" not in seen[0]
+    assert result["notes"] == [NOTE_LIVE]
+    assert not server.fresh("staff")
+    # So a move into it is an ordinary move, in automatic mode as well.
+    moved = await server.call("update_user", {"usernames": ["bob"], "group": "Staff"})
+    assert only(moved)["outcome"] == "done" and "warnings" not in only(moved)
+    # A group made here and deleted before any restart was never known.
+    await server.call("create_group", {"name": "ops"})
+    await server.call("delete_group", {"name": "ops"})
+    seen.clear()
+    again = await prompt.call("create_group", {"name": "ops"}, seen=seen)
+    assert "cannot connect to the VPN until Access Server is restarted" in seen[0]
+    assert again["notes"] == [NOTE_NEW_GROUP] and server.fresh("ops")
+    # After a restart without the group, the old name is new again.
+    await server.call("delete_group", {"name": "Staff"})
+    server.restarted = prompt.restarted = "2026-09-10T08:00:00.000000Z"
+    seen.clear()
+    await prompt.call("create_group", {"name": "staff"}, seen=seen)
+    assert "cannot connect to the VPN until Access Server is restarted" in seen[0]
+    assert server.fresh("staff")
+
+
+async def test_a_delete_is_done_also_when_the_restart_time_cannot_be_read(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["alice"]["group"] = None
+    server.restarted = None
+    result = await server.call("delete_group", {"name": "staff"})
+    assert only(result)["outcome"] == "done" and "staff" not in server.groups
+    assert "is not noted" in caplog.text

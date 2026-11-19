@@ -111,6 +111,10 @@ MAX_NAME = 128
 MAX_MEMBERS_SHOWN = 20
 # A side effect line of the preview is cut at 300 characters.
 MAX_MEMBERS_TEXT = 220
+EFFECT_KNOWN_GROUP = (
+    "a group of this name was there at the last restart of Access Server, so its "
+    "members can connect without another restart"
+)
 NOTE_NEW_GROUP = (
     "The group is saved. Access Server refuses the VPN connections of its members "
     "until the server is restarted. Ask the administrator whether to restart now "
@@ -390,6 +394,16 @@ async def _is_fresh(
         return fresh.has(client.config.url, await last_restarted(client), group)
     except ToolError as exc:
         log.warning("Cannot tell whether %s waits for a restart: %s", group, exc)
+        return False
+
+
+async def _is_known(fresh: FreshGroups, client: AccessServerClient, group: str) -> bool:
+    """Was a group of this name deleted through this server since the last
+    restart, so that the server still knows the name? Unreadable counts as no."""
+    try:
+        return fresh.knows(client.config.url, await last_restarted(client), group)
+    except ToolError as exc:
+        log.warning("Cannot tell whether %s needs a restart: %s", group, exc)
         return False
 
 
@@ -780,6 +794,7 @@ class _CreateGroup:
     note: str = NOTE_NEW_GROUP
     needs_output_dir: bool = False
     _created: bool = False
+    _known: bool = False
 
     def key(self, item: str) -> str:
         return item.casefold()
@@ -802,14 +817,19 @@ class _CreateGroup:
                 f"their group although no such group exists ({names}); creating "
                 "it would change these users at once. Nothing was changed."
             )
+        self._known = await _is_known(self.fresh, client, item)
+        if self._known:
+            self.note = NOTE_LIVE
         return {"exists": False}
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
         after = group_after(None, self.fields, [], own.base, fields=FIELDS)
         changes = {name: (None, value) for name, value in self.fields.items()}
         effects = [
-            "members of a new group cannot connect to the VPN until Access Server "
-            "is restarted"
+            EFFECT_KNOWN_GROUP
+            if self._known
+            else "members of a new group cannot connect to the VPN until Access "
+            "Server is restarted"
         ]
         if not changes:
             effects.append("every value is inherited from the server")
@@ -1004,7 +1024,10 @@ class _DeleteGroup:
         self, client: AccessServerClient, item: str, before: dict[str, Any]
     ) -> dict[str, Any]:
         await client.post("/groups/delete", {"groups": [item]})
-        self.fresh.remove(client.config.url, item)
+        try:
+            self.fresh.remove(client.config.url, await last_restarted(client), item)
+        except ToolError as exc:
+            log.warning("The deletion of group %s is not noted: %s", item, exc)
         return {"members_without_group": before["members"]}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:

@@ -259,6 +259,9 @@ the line "group ... was created after the last restart: ... cannot connect until
 restart". The server remembers the groups it created in `<config dir>/fresh_groups.json`, so
 this also works in a later session; a restart made anywhere, also in the Admin UI, clears it.
 A group created in the Admin UI is not known to the server and gets no such line.
+A group that is deleted and created again under the same name works without a restart, as
+long as the name was there at the last restart; `create_group` says so for a group that was
+deleted through this server, and warns as for a new group when it was deleted elsewhere.
 A user moved to another group gets it at the next VPN connection. A running session keeps
 the old access, a restart does not change that (measured on 3.1.0 and 3.2.4); the tool says
 so when the user is connected, and `disconnect_vpn_sessions` ends the session.

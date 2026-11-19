@@ -38,17 +38,16 @@ def test_a_group_created_after_a_restart_drops_the_names_from_before_it(
     assert groups.has(URL, T2, "new")
     assert not groups.has(URL, T2, "old") and not groups.has(URL, T1, "old")
     stored = json.loads((tmp_path / FILE_NAME).read_text())
-    assert stored["servers"][URL] == {"restarted": T2, "groups": ["new"]}
+    assert stored["servers"][URL] == {"restarted": T2, "groups": ["new"], "known": []}
 
 
 def test_a_deleted_group_is_no_longer_fresh(tmp_path: Path) -> None:
     groups = FreshGroups(tmp_path)
     groups.add(URL, T1, "sales")
     groups.add(URL, T1, "support")
-    groups.remove(URL, "SALES")
-    groups.remove(URL, "never-there")
+    groups.remove(URL, T1, "SALES")
     assert not groups.has(URL, T1, "sales") and groups.has(URL, T1, "support")
-    groups.remove(URL, "support")
+    groups.remove(URL, T1, "support")
     assert json.loads((tmp_path / FILE_NAME).read_text())["servers"] == {}
 
 
@@ -73,3 +72,32 @@ def test_a_broken_or_unwritable_file_is_an_empty_list_not_an_error(
     blocked = FreshGroups(tmp_path / FILE_NAME / "below-a-file")
     blocked.add(URL, T1, "sales")
     assert not blocked.has(URL, T1, "sales")
+
+
+def test_a_name_the_server_had_at_its_restart_is_not_new_when_created_again(
+    tmp_path: Path,
+) -> None:
+    groups = FreshGroups(tmp_path)
+    # "staff" was not created here, so it was there at the last restart.
+    groups.remove(URL, T1, "Staff")
+    assert groups.knows(URL, T1, "staff") and not groups.has(URL, T1, "staff")
+    groups.add(URL, T1, "STAFF")
+    assert not groups.has(URL, T1, "staff")
+    assert FreshGroups(tmp_path).knows(URL, T1, "staff")
+    # A group created here and deleted before any restart was never known.
+    groups.add(URL, T1, "ops")
+    groups.remove(URL, T1, "ops")
+    assert not groups.knows(URL, T1, "ops")
+    groups.add(URL, T1, "ops")
+    assert groups.has(URL, T1, "ops")
+    # After a restart without the group the server has forgotten the name.
+    assert not groups.knows(URL, T2, "staff")
+    groups.add(URL, T2, "staff")
+    assert groups.has(URL, T2, "staff")
+
+
+def test_a_file_written_before_known_names_existed_is_read(tmp_path: Path) -> None:
+    old = {"version": 1, "servers": {URL: {"restarted": T1, "groups": ["ops"]}}}
+    (tmp_path / FILE_NAME).write_text(json.dumps(old))
+    groups = FreshGroups(tmp_path)
+    assert groups.has(URL, T1, "ops") and not groups.knows(URL, T1, "ops")

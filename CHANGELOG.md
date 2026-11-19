@@ -68,7 +68,9 @@ and sessions. It is off by default, and every change is shown for approval first
   (`<config dir>/fresh_groups.json`, kept between sessions, cleared by a restart made
   anywhere). `create_user` and `update_user` that put a user into such a group say that the
   user cannot connect until a warm restart; in automatic approval mode they are refused. A
-  group created in the Admin UI is not known and gets no warning.
+  group created in the Admin UI is not known and gets no warning. A group deleted with
+  `delete_group` and created again under the same name before any restart is not treated
+  as new: Access Server still accepts its members (measured on 3.1.0 and 3.2.4).
 - `update_user` that moves a connected user to another group says that the running session
   keeps the old access until it ends. A restart does not change a running session (measured
   on 3.1.0 and 3.2.4).
