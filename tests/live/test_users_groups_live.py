@@ -15,12 +15,14 @@ import pytest
 from fastmcp.exceptions import ToolError
 
 from as_mcp_server.texts import (
+    MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
-    WARN_GROUP_RESTART,
+    WARN_FRESH_GROUP,
     WARN_OWN_MFA,
+    WARN_RECONNECT,
 )
 from as_mcp_server.tools_users import NOTE_NEW_GROUP
 from tests.conftest import call_tool
@@ -446,7 +448,9 @@ async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_s
     )
     (item,) = result["items"]
     assert item["outcome"] == "done"
-    assert item["warnings"] == [WARN_GROUP_RESTART, line]
+    # The second group is new as well, so the move has both lines.
+    fresh = WARN_FRESH_GROUP.format(group=scratch.group2, name=name)
+    assert item["warnings"] == [fresh, line]
     assert f"also: {line}" in seen[0] and "    deny: false -> true" in seen[0]
     assert "sessions" not in item["before"]
     assert client.running()
@@ -521,3 +525,56 @@ async def test_auto_keeps_a_group_whose_member_would_lose_mfa(scratch) -> None:
     await scratch.call("create_group", {"name": group, "totp": True})
     emptied = await scratch.auto("delete_group", {"name": group})
     assert emptied["items"][0]["outcome"] == "done"
+
+
+async def test_a_move_into_a_group_created_since_the_restart_warns_or_is_refused(
+    scratch,
+) -> None:
+    name, other, group = scratch.user, scratch.other, scratch.group
+    await scratch.call("create_group", {"name": group})
+    await scratch.call("create_user", {"users": [{"username": name}]})
+    seen: list[str] = []
+    moved = await scratch.call(
+        "update_user", {"usernames": [name], "group": group}, seen=seen
+    )
+    line = WARN_FRESH_GROUP.format(group=group, name=name)
+    assert f"also: {line}" in seen[0]
+    assert moved["items"][0]["outcome"] == "done"
+    assert moved["items"][0]["warnings"] == [line]
+
+    await scratch.call("create_user", {"users": [{"username": other}]})
+    for tool, args in (
+        ("update_user", {"usernames": [other], "group": group}),
+        ("create_user", {"users": [{"username": f"{other}2", "group": group}]}),
+    ):
+        with pytest.raises(ToolError) as refused:
+            await scratch.auto(tool, args)
+        assert "Refused in automatic approval mode: group" in str(refused.value), tool
+    assert str(refused.value) == MSG_AUTO_FRESH_GROUP.format(
+        group=group, name=f"{other}2"
+    )
+    assert await scratch.user_record(f"{other}2") is None
+
+    # A group that was there at the last restart: no line, and auto mode does it.
+    back = await scratch.auto("update_user", {"usernames": [name], "group": "staff"})
+    assert back["items"][0]["outcome"] == "done"
+    assert "warnings" not in back["items"][0]
+
+
+async def test_a_move_of_a_connected_user_says_the_session_keeps_the_old_access(
+    scratch,
+) -> None:
+    require_client_image()
+    name = scratch.user
+    await scratch.call("create_user", {"users": [{"username": name}]})
+    await scratch.call("update_user", {"usernames": [name], "autologin": True})
+    profile = await scratch.autologin_profile(name)
+    client = await scratch.connect(name, profile)
+    seen: list[str] = []
+    moved = await scratch.call(
+        "update_user", {"usernames": [name], "group": "staff"}, seen=seen
+    )
+    line = WARN_RECONNECT.format(name=name)
+    assert f"also: {line}" in seen[0]
+    assert moved["items"][0]["warnings"] == [line]
+    assert client.running() and len(await scratch.sessions(name)) == 1

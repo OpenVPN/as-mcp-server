@@ -61,11 +61,17 @@ and sessions. It is off by default, and every change is shown for approval first
   (IPv4 access lists of users and groups, with a note that the global IP/subnet rules are
   server settings read with `get_status_overview`, and that IPv6 access lists are not
   returned by the API).
-- `warm_restart`: a warm restart of Access Server, for a new group or a user put into a
-  group. No other tool restarts the server. It asks for approval in every mode, also with
-  `OPENVPN_AS_APPROVAL=auto`, and the question says how many VPN clients are connected.
-  `create_group`, `create_user` with a group and `update_user` with a group say that a warm
-  restart is needed.
+- `warm_restart`: a warm restart of Access Server, for a new group. No other tool restarts
+  the server. It asks for approval in every mode, also with `OPENVPN_AS_APPROVAL=auto`, and
+  the question says how many VPN clients are connected.
+- The server remembers the groups it created since the last restart
+  (`<config dir>/fresh_groups.json`, kept between sessions, cleared by a restart made
+  anywhere). `create_user` and `update_user` that put a user into such a group say that the
+  user cannot connect until a warm restart; in automatic approval mode they are refused. A
+  group created in the Admin UI is not known and gets no warning.
+- `update_user` that moves a connected user to another group says that the running session
+  keeps the old access until it ends. A restart does not change a running session (measured
+  on 3.1.0 and 3.2.4).
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed

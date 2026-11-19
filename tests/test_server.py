@@ -436,10 +436,12 @@ async def test_write_mode_swaps_the_opening_of_the_instructions_and_nothing_else
         "approval; prefer one list call",
         "over many single calls.",
         "To block a user, use block_user; it also disconnects the user's sessions.",
-        "A new group, and a user moved into a group, work fully only after a warm "
-        "restart of Access Server:",
+        "The members of a new group cannot connect until a warm restart of Access "
+        "Server:",
         "say so and offer warm_restart. Call it only when the user asks or agrees; "
         "it asks for approval in every mode.",
+        "A user moved to another group gets it at the next VPN connection, not in a "
+        "running session.",
     ]
     # Claude Code cuts the instructions of a server at 4096 characters.
     assert len(WRITE_INSTRUCTIONS) <= 4096

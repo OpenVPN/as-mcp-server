@@ -27,6 +27,7 @@ from as_mcp_server.writes import (
     Partial,
     Plan,
     WriteDeps,
+    last_restarted,
     run_write,
 )
 
@@ -37,13 +38,6 @@ RESTART_TIMEOUT = 120.0
 # How long to wait for /server/status to show the new restart time.
 SETTLE_POLLS = 10
 POLL_SECONDS = 1.0
-
-
-async def _last_restarted(client: AccessServerClient) -> Any:
-    status = await client.get("/server/status")
-    if not isinstance(status, dict) or "last_restarted" not in status:
-        raise ToolError("Access Server did not return the time of its last restart.")
-    return status["last_restarted"]
 
 
 async def _client_count(client: AccessServerClient) -> int:
@@ -74,7 +68,7 @@ class _WarmRestart:
     async def read(self, client: AccessServerClient, item: str) -> dict[str, Any]:
         # The number of clients is shown, not compared: it changes by itself.
         self._clients = await _client_count(client)
-        return {"last_restarted": await _last_restarted(client)}
+        return {"last_restarted": await last_restarted(client)}
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
         self._before = before["last_restarted"]
@@ -101,7 +95,7 @@ class _WarmRestart:
             if attempt:
                 await asyncio.sleep(POLL_SECONDS)
             try:
-                now = await _last_restarted(client)
+                now = await last_restarted(client)
             except ToolError:
                 continue
             if now != self._before:
@@ -119,8 +113,9 @@ def register_restart_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         description=(
             "Warm restart of Access Server, so that changes that wait for a "
             "restart take effect: a group created since the last restart starts "
-            "to accept the VPN connections of its members, and a user moved to "
-            "another group gets everything from that group. Call it only when "
+            "to accept the VPN connections of its members. It does not change a "
+            "running VPN session: a user moved to another group gets that group "
+            "at the next connection. Call it only when "
             "the user asks for a restart, or agrees after a tool said one is "
             "needed; never decide it yourself and never call it after every "
             "change. The administrator is always asked for approval, also in "

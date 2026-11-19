@@ -114,10 +114,12 @@ WRITE_OPENING = (
     "prefer one list call\n"
     "over many single calls.\n"
     "To block a user, use block_user; it also disconnects the user's sessions.\n"
-    "A new group, and a user moved into a group, work fully only after a warm "
-    "restart of Access Server:\n"
+    "The members of a new group cannot connect until a warm restart of Access "
+    "Server:\n"
     "say so and offer warm_restart. Call it only when the user asks or agrees; it "
     "asks for approval in every mode.\n"
+    "A user moved to another group gets it at the next VPN connection, not in a "
+    "running session.\n"
 )
 # The read-only opening ends where the troubleshooting advice starts.
 _SHARED_FROM = "Start with connection_info when anything looks wrong"

@@ -17,6 +17,7 @@ Measured on 3.1.0 and 3.2.4 before this was written:
 from __future__ import annotations
 
 import contextlib
+import logging
 import secrets as stdlib_secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -41,13 +42,16 @@ from as_mcp_server.effective import (
     snapshot,
     user_after,
 )
+from as_mcp_server.fresh_groups import FreshGroups
 from as_mcp_server.guards import Effect, auto_limit_reason
 from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
+    MSG_AUTO_FRESH_GROUP,
     MSG_USE_BLOCK,
-    NOTE_GROUP_RESTART,
-    WARN_GROUP_RESTART,
+    NOTE_GROUP_MOVE,
+    WARN_FRESH_GROUP,
+    WARN_RECONNECT,
 )
 from as_mcp_server.tools_profiles import serials_of
 from as_mcp_server.tools_sessions import (
@@ -72,10 +76,13 @@ from as_mcp_server.writes import (
     WriteDeps,
     find_record,
     kind_of,
+    last_restarted,
     read_group,
     read_user,
     run_write,
 )
+
+log = logging.getLogger(__name__)
 
 AuthMethod = Literal["local", "pam", "radius", "ldap", "saml"]
 RerouteGw = Literal["disable", "dns_only", "global"]
@@ -372,6 +379,20 @@ async def _members(client: AccessServerClient, group: str) -> list[dict[str, Any
 # --- users ------------------------------------------------------------------------
 
 
+async def _is_fresh(
+    fresh: FreshGroups | None, client: AccessServerClient, group: str
+) -> bool:
+    """Was `group` created through this server since the last restart? A restart
+    time that cannot be read counts as no."""
+    if fresh is None:
+        return False
+    try:
+        return fresh.has(client.config.url, await last_restarted(client), group)
+    except ToolError as exc:
+        log.warning("Cannot tell whether %s waits for a restart: %s", group, exc)
+        return False
+
+
 @dataclass
 class _CreateUser:
     directory: Path
@@ -379,8 +400,10 @@ class _CreateUser:
     tool: str = "create_user"
     action: str = "Create user"
     note: str = NOTE_LIVE
+    fresh: FreshGroups | None = None
     _created: set[str] = field(default_factory=set)
     _files: dict[str, Path] = field(default_factory=dict)
+    _fresh: dict[str, bool] = field(default_factory=dict)
 
     def key(self, item: NewUser) -> str:
         return item.username.casefold()
@@ -412,6 +435,10 @@ class _CreateUser:
         if item.group is not None:
             group = await read_group(client, item.group)
             before["group_state"] = _values(_state(group))
+            if item.group not in self._fresh:
+                self._fresh[item.group] = await _is_fresh(
+                    self.fresh, client, item.group
+                )
         return before
 
     async def _user_state(self, client: AccessServerClient, name: str) -> dict:
@@ -435,8 +462,9 @@ class _CreateUser:
         for shown in ("admin", "deny", "deny_web", "auth_method", "totp", "autologin"):
             changes[shown] = (None, after[shown])
         effects: list[str] = []
-        if item.group is not None:
-            effects.append(WARN_GROUP_RESTART)
+        waits = item.group is not None and self._fresh.get(item.group, False)
+        if waits:
+            effects.append(WARN_FRESH_GROUP.format(group=item.group, name=name))
         if item.deny:
             effects.append("the user is created blocked")
         if item.generate_password:
@@ -455,6 +483,9 @@ class _CreateUser:
             PreviewItem(name, changes, tuple(effects)),
             (Effect("user", name, None, _guarded(after)),),
             self._auto_reason(item, before, own, method),
+            MSG_AUTO_FRESH_GROUP.format(group=clean(item.group), name=clean(name))
+            if waits
+            else None,
         )
 
     def _auto_reason(
@@ -537,16 +568,19 @@ class _UpdateUser:
     action: str = "Update user"
     note: str = NOTE_USERPROP_CACHE
     needs_output_dir: bool = False
+    fresh: FreshGroups | None = None
+    _fresh: bool | None = None
     # Per user: the server's record, and the record of the group it will be in.
     _users: dict[str, dict[str, Any]] = field(default_factory=dict)
     _groups: dict[str, dict[str, Any] | None] = field(default_factory=dict)
     _sessions: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _effects: dict[str, Effect] = field(default_factory=dict)
     _warnings: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    _moves: dict[str, str | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.group is not None:
-            self.note = f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_RESTART}"
+            self.note = f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_MOVE}"
 
     def key(self, item: str) -> str:
         return item.casefold()
@@ -564,6 +598,8 @@ class _UpdateUser:
         current = before["group"]
         if self.group is not None:
             group = await read_group(client, self.group)
+            if self._fresh is None:
+                self._fresh = await _is_fresh(self.fresh, client, self.group)
         elif current is not None:
             # A group name without a group record gives the user nothing (measured:
             # the server stores any text as the group).
@@ -599,10 +635,29 @@ class _UpdateUser:
         effect = Effect("user", item, _guarded(before), _guarded(after))
         warnings = not_disconnected((effect,), self._sessions.get(item, ()))
         self._effects[item], self._warnings[item] = effect, warnings
-        return Plan(PreviewItem(item, changes, self._shown(warnings)), (effect,))
+        moved = self.group is not None and after["group"] != before["group"]
+        self._moves[item] = self._move_warning(item, warnings) if moved else None
+        return Plan(
+            PreviewItem(item, changes, self._shown(item, warnings)),
+            (effect,),
+            None,
+            MSG_AUTO_FRESH_GROUP.format(group=clean(self.group), name=clean(item))
+            if moved and self._fresh
+            else None,
+        )
 
-    def _shown(self, warnings: tuple[str, ...]) -> tuple[str, ...]:
-        return warnings if self.group is None else (WARN_GROUP_RESTART, *warnings)
+    def _move_warning(self, item: str, blocked: tuple[str, ...]) -> str | None:
+        """What a move to another group does not do by itself. A user the move
+        blocks has a line about the running session already."""
+        if self._fresh:
+            return WARN_FRESH_GROUP.format(group=self.group, name=item)
+        if self._sessions.get(item) and not blocked:
+            return WARN_RECONNECT.format(name=item)
+        return None
+
+    def _shown(self, item: str, warnings: tuple[str, ...]) -> tuple[str, ...]:
+        move = self._moves.get(item)
+        return warnings if move is None else (move, *warnings)
 
     async def apply(
         self, client: AccessServerClient, item: str, before: dict[str, Any]
@@ -615,7 +670,7 @@ class _UpdateUser:
             warnings = await _warnings_now(
                 client, (self._effects[item],), [item], warnings
             )
-        warnings = self._shown(warnings)
+        warnings = self._shown(item, warnings)
         return {"warnings": list(warnings)} if warnings else {}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
@@ -719,6 +774,7 @@ class _DeleteUser:
 @dataclass
 class _CreateGroup:
     fields: dict[str, Any]
+    fresh: FreshGroups
     tool: str = "create_group"
     action: str = "Create group"
     note: str = NOTE_NEW_GROUP
@@ -773,6 +829,10 @@ class _CreateGroup:
     ) -> dict[str, Any]:
         await client.post("/groups/create", {"name": item, **self.fields})
         self._created = True
+        try:
+            self.fresh.add(client.config.url, await last_restarted(client), item)
+        except ToolError as exc:
+            log.warning("Group %s is not noted as waiting for a restart: %s", item, exc)
         return {}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
@@ -872,6 +932,7 @@ class _UpdateGroup:
 
 @dataclass
 class _DeleteGroup:
+    fresh: FreshGroups
     tool: str = "delete_group"
     action: str = "Delete group"
     note: str = NOTE_LIVE
@@ -943,6 +1004,7 @@ class _DeleteGroup:
         self, client: AccessServerClient, item: str, before: dict[str, Any]
     ) -> dict[str, Any]:
         await client.post("/groups/delete", {"groups": [item]})
+        self.fresh.remove(client.config.url, item)
         return {"members_without_group": before["members"]}
 
     async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
@@ -1097,6 +1159,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         op = _CreateUser(
             directory=output_dir(),
             needs_output_dir=any(user.generate_password for user in users),
+            fresh=deps.fresh,
         )
         args = {"users": [user.model_dump() for user in users]}
         return await run_write(ctx, deps, op, users, args)
@@ -1192,7 +1255,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "group": group,
             "reset_to_inherited": list(reset),
         }
-        op = _UpdateUser(changes=changes, group=group, reset=reset)
+        op = _UpdateUser(changes=changes, group=group, reset=reset, fresh=deps.fresh)
         return await run_write(ctx, deps, op, usernames, args)
 
     @mcp.tool(
@@ -1284,7 +1347,7 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             allow_generate_profiles=allow_generate_profiles,
             reroute_gw=reroute_gw,
         )
-        op = _CreateGroup(fields=fields)
+        op = _CreateGroup(fields=fields, fresh=deps.fresh)
         return await run_write(ctx, deps, op, [name], {"name": name, **fields})
 
     @mcp.tool(
@@ -1363,4 +1426,6 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         tags={"write"},
     )
     async def delete_group(ctx: Context, name: GroupName) -> Any:
-        return await run_write(ctx, deps, _DeleteGroup(), [name], {"name": name})
+        return await run_write(
+            ctx, deps, _DeleteGroup(deps.fresh), [name], {"name": name}
+        )

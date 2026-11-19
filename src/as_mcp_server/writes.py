@@ -37,6 +37,7 @@ from as_mcp_server.effective import (
     CannotCompute,
     server_wide,
 )
+from as_mcp_server.fresh_groups import FreshGroups
 from as_mcp_server.guards import (
     Effect,
     auto_limit_reason,
@@ -120,6 +121,10 @@ class WriteDeps:
     holder: ClientHolder
     audit: AuditLog
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    fresh: FreshGroups = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.fresh = FreshGroups(self.audit.path.parent)
 
     async def own(self) -> Own:
         """Read every user and group once. `/users/defaultuser` is never read."""
@@ -186,6 +191,9 @@ class Plan:
     preview: PreviewItem
     effects: tuple[Effect, ...] = ()
     auto_reason: str | None = None
+    # A whole refusal for automatic mode, when "repeat it with a prompt" is the
+    # wrong advice.
+    auto_message: str | None = None
 
 
 class Partial(Exception):
@@ -239,6 +247,13 @@ class WriteOp[Item](Protocol):
         """The state after; raises Partial(["written"], ...) when it does not show
         what was written."""
         ...
+
+
+async def last_restarted(client: AccessServerClient) -> Any:
+    status = await client.get("/server/status")
+    if not isinstance(status, dict) or "last_restarted" not in status:
+        raise ToolError("Access Server did not return the time of its last restart.")
+    return status["last_restarted"]
 
 
 async def read_user(client: AccessServerClient, name: str) -> dict[str, Any]:
@@ -540,6 +555,9 @@ async def run_write[Item](
                 error=reason,
                 predicted=True,
             )
+        message = next((p.auto_message for p in plans if p.auto_message), None)
+        if message is not None:
+            raise run.refuse(rows, "refused_auto_limit", message, predicted=True)
 
     if own_mfa is not None:
         warnings.append(WARN_OWN_MFA.format(name=clean(own.name)))

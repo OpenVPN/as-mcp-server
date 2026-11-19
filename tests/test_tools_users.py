@@ -17,19 +17,22 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 
 from as_mcp_server import approval, tools_sessions, tools_users
+from as_mcp_server.fresh_groups import FreshGroups
 from as_mcp_server.outputs import DELIVERY_REMINDER
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
+    MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_CHANGED,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
-    NOTE_GROUP_RESTART,
-    WARN_GROUP_RESTART,
+    NOTE_GROUP_MOVE,
+    WARN_FRESH_GROUP,
     WARN_OWN_MFA,
+    WARN_RECONNECT,
 )
 from as_mcp_server.tools_sessions import MSG_STILL_CONNECTED
 from as_mcp_server.tools_users import (
@@ -121,6 +124,7 @@ class FakeServer:
         self.deaf: set[str] = set()
         self.fail: dict[tuple[str, str], Any] = {}
         self.events: list[str] = []
+        self.restarted: str | None = "2026-09-09T20:47:29.403414Z"
         self.router = Router(
             {
                 LOGIN: fixture("login_ok"),
@@ -134,6 +138,7 @@ class FakeServer:
                 ("POST", f"{P}/profiles/list"): self._profiles_list,
                 PROFILES_DELETE: self._guarded(self._profiles_delete),
                 ("GET", f"{P}/vpn/status"): self._status,
+                ("GET", f"{P}/server/status"): self._server_status,
                 DISCONNECT: self._guarded(self._disconnect),
                 GROUP_CREATE: self._guarded(self._group_create),
                 GROUP_DELETE: self._guarded(self._group_delete),
@@ -294,6 +299,15 @@ class FakeServer:
         if not self.profiles.pop(name, None):
             return httpx.Response(404, json={"reason": "not found"})
         return httpx.Response(200, json={"message": "The user profiles were deleted"})
+
+    def _server_status(self, request: httpx.Request) -> httpx.Response:
+        if self.restarted is None:
+            return httpx.Response(500, json={"detail": "no status"})
+        return httpx.Response(200, json={"last_restarted": self.restarted})
+
+    def fresh(self, name: str) -> bool:
+        groups = FreshGroups(self.tmp_path)
+        return groups.has(self.settings.url, self.restarted, name)
 
     def _status(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -954,9 +968,9 @@ async def test_a_move_to_another_group_shows_everything_that_changes(
     assert "deny:" not in text
     item = only(result)
     assert item["after"]["group"] == "mfa" and item["after"]["totp"] is True
-    assert f"    also: {WARN_GROUP_RESTART}" in text
-    assert item["warnings"] == [WARN_GROUP_RESTART]
-    assert result["notes"] == [f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_RESTART}"]
+    # A group that is not new, a user who is not connected: nothing to warn about.
+    assert "also:" not in text and "warnings" not in item
+    assert result["notes"] == [f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_MOVE}"]
 
 
 @pytest.mark.parametrize(
@@ -989,13 +1003,10 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
     assert f"    also: {line}" in seen[0]
     assert "    deny: false -> true" in seen[0]
     alice, carol = result["items"]
-    assert alice["outcome"] == "done" and alice["warnings"] == [
-        WARN_GROUP_RESTART,
-        line,
-    ]
+    assert alice["outcome"] == "done" and alice["warnings"] == [line]
     # Sessions come and go by themselves: they are not part of the approved state.
     assert "sessions" not in alice["before"]
-    assert carol["warnings"] == [WARN_GROUP_RESTART]  # blocked too, no session
+    assert "warnings" not in carol  # blocked too, no session
     assert MSG_NOT_DISCONNECTED.format(name="carol") not in seen[0]
     assert server.sent(DISCONNECT) == []  # update_user never disconnects
     # bob sets deny=false himself, so the group's block does not reach him
@@ -1005,7 +1016,7 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
         "update_user", {"usernames": ["bob"], "group": "blocked"}, seen=seen
     )
     assert seen[0].count("also:") == 1
-    assert only(result)["warnings"] == [WARN_GROUP_RESTART]
+    assert only(result)["warnings"] == [WARN_RECONNECT.format(name="bob")]
 
 
 async def test_resetting_deny_to_an_inherited_true_names_the_connected_user(
@@ -1037,10 +1048,7 @@ async def test_a_session_that_begins_during_the_prompt_is_named_after_the_write(
     )
     item = only(result)
     assert item["outcome"] == "done"
-    assert item["warnings"] == [
-        WARN_GROUP_RESTART,
-        MSG_NOT_DISCONNECTED.format(name="alice"),
-    ]
+    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
 
 
 async def test_a_session_that_ended_during_the_prompt_is_no_longer_named(
@@ -1064,7 +1072,7 @@ async def test_a_session_that_ended_during_the_prompt_is_no_longer_named(
         ).structured_content
     assert MSG_NOT_DISCONNECTED.format(name="alice") in seen[0]
     assert only(result)["outcome"] == "done"
-    assert only(result)["warnings"] == [WARN_GROUP_RESTART]
+    assert "warnings" not in only(result)
 
 
 async def test_warnings_fall_back_to_the_preview_when_sessions_cannot_be_read_again(
@@ -1088,10 +1096,7 @@ async def test_warnings_fall_back_to_the_preview_when_sessions_cannot_be_read_ag
     )
     item = only(result)
     assert item["outcome"] == "done"
-    assert item["warnings"] == [
-        WARN_GROUP_RESTART,
-        MSG_NOT_DISCONNECTED.format(name="alice"),
-    ]
+    assert item["warnings"] == [MSG_NOT_DISCONNECTED.format(name="alice")]
 
 
 async def test_a_group_that_changes_during_the_prompt_is_a_changed_state(
@@ -2009,3 +2014,160 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
     assert "never delete and create a user again" in tools["create_user"].description
     assert "reset_to_inherited" in tools["update_user"].description
     assert "deny is not the lockout" in tools["update_user"].description
+
+
+async def test_a_created_group_is_noted_as_waiting_for_a_restart(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    await server.call("create_group", {"name": "Ops"})
+    assert server.fresh("ops") and not server.fresh("staff")
+    # A new session reads the same file.
+    assert FakeServer(tmp_path).fresh("ops")
+    # Any restart, also one made in the Admin UI, shows as another restart time.
+    server.restarted = "2026-09-10T08:00:00.000000Z"
+    assert not server.fresh("ops")
+
+
+async def test_a_declined_or_failed_create_notes_nothing(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError):
+        await server.call("create_group", {"name": "ops"}, answer="decline")
+    assert not server.fresh("ops")
+    assert not (tmp_path / "fresh_groups.json").exists()
+
+
+async def test_a_deleted_group_is_no_longer_noted(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    await server.call("create_group", {"name": "ops"})
+    await server.call("delete_group", {"name": "ops"})
+    assert not server.fresh("ops")
+
+
+async def test_a_group_is_created_also_when_the_restart_time_cannot_be_read(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeServer(tmp_path)
+    server.restarted = None
+    result = await server.call("create_group", {"name": "ops"})
+    assert only(result)["outcome"] == "done" and "ops" in server.groups
+    assert "not noted as waiting for a restart" in caplog.text
+
+
+async def test_a_move_of_a_connected_user_says_the_session_keeps_the_old_access(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["alice", "bob"], "group": "mfa"}, seen=seen
+    )
+    line = WARN_RECONNECT.format(name="alice")
+    assert "disconnect_vpn_sessions" in line and "restart" not in line
+    assert seen[0].count("also:") == 1 and f"    also: {line}" in seen[0]
+    alice, bob = result["items"]
+    assert alice["warnings"] == [line] and "warnings" not in bob
+    # The same group again is not a move.
+    seen.clear()
+    await server.call(
+        "update_user", {"usernames": ["alice"], "group": "mfa", "totp": True}, seen=seen
+    )
+    assert "also:" not in seen[0]
+    # Auto mode does it too: nobody is locked out.
+    auto = FakeServer(tmp_path / "auto", mode="auto")
+    auto.connect("alice")
+    done = await auto.call("update_user", {"usernames": ["alice"], "group": "mfa"})
+    assert only(done)["outcome"] == "done" and only(done)["warnings"] == [line]
+
+
+async def test_a_move_into_a_group_that_waits_for_a_restart_warns_and_names_both(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    await server.call("create_group", {"name": "ops"})
+    server.connect("alice")
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "group": "ops"}, seen=seen
+    )
+    line = WARN_FRESH_GROUP.format(group="ops", name="alice")
+    assert line == (
+        "group ops was created after the last restart: alice cannot connect until "
+        "a warm restart (warm_restart)"
+    )
+    # The session line would advise the very thing that locks alice out.
+    assert seen[0].count("also:") == 1 and f"    also: {line}" in seen[0]
+    assert only(result)["outcome"] == "done" and only(result)["warnings"] == [line]
+    # After a restart, made here or anywhere else, the group is an ordinary one.
+    server.restarted = "2026-09-10T08:00:00.000000Z"
+    server.sessions.clear()
+    seen.clear()
+    await server.call("update_user", {"usernames": ["bob"], "group": "ops"}, seen=seen)
+    assert "also:" not in seen[0]
+
+
+async def test_a_move_into_a_group_that_waits_for_a_restart_is_refused_in_auto_mode(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    await server.call("create_group", {"name": "ops"})
+    message = MSG_AUTO_FRESH_GROUP.format(group="ops", name="alice")
+    assert message == (
+        "Refused in automatic approval mode: group ops was created after the last "
+        "restart, and alice could not connect. Run warm_restart first, then repeat."
+    )
+    with pytest.raises(ToolError) as refused:
+        await server.call(
+            "update_user", {"usernames": ["bob", "alice"], "group": "ops"}
+        )
+    assert str(refused.value) == MSG_AUTO_FRESH_GROUP.format(group="ops", name="bob")
+    assert server.users["alice"]["group"] == "staff"
+    assert server.users["bob"]["group"] is None
+    with pytest.raises(ToolError) as refused:
+        await server.call(
+            "create_user", {"users": [{"username": "dan", "group": "ops"}]}
+        )
+    assert str(refused.value) == MSG_AUTO_FRESH_GROUP.format(group="ops", name="dan")
+    assert "dan" not in server.users
+    lines = [json.loads(x) for x in (tmp_path / "audit.jsonl").read_text().splitlines()]
+    assert [x["outcome"] for x in lines[-3:]] == ["refused_auto_limit"] * 3
+    # After the restart the same calls go through.
+    server.restarted = "2026-09-10T08:00:00.000000Z"
+    done = await server.call("update_user", {"usernames": ["alice"], "group": "ops"})
+    assert only(done)["outcome"] == "done"
+    made = await server.call(
+        "create_user", {"users": [{"username": "dan", "group": "ops"}]}
+    )
+    assert only(made)["outcome"] == "done"
+
+
+async def test_a_user_created_in_a_group_is_warned_only_when_the_group_is_new(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    await server.call(
+        "create_user", {"users": [{"username": "dan", "group": "staff"}]}, seen=seen
+    )
+    assert "restart" not in seen[0]
+    await server.call("create_group", {"name": "ops"})
+    seen.clear()
+    result = await server.call(
+        "create_user", {"users": [{"username": "eve", "group": "ops"}]}, seen=seen
+    )
+    line = WARN_FRESH_GROUP.format(group="ops", name="eve")
+    assert f"    also: {line}" in seen[0] and only(result)["outcome"] == "done"
+
+
+async def test_a_restart_time_that_cannot_be_read_does_not_stop_a_move(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    await server.call("create_group", {"name": "ops"})
+    server.restarted = None
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "group": "ops"}, seen=seen
+    )
+    assert only(result)["outcome"] == "done" and "also:" not in seen[0]

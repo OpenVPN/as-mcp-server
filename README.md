@@ -246,14 +246,24 @@ rights, switches MFA off, changes an authentication method, creates a user with 
 authentication method other than the one it would inherit, switches autologin on, creates an
 autologin profile or link, switches MFA on for the account it signs in with itself, or makes
 a change whose result it cannot compute. These are
-refused with the reason; make them in an app that shows the approval prompt. Deleting a user
+refused with the reason; make them in an app that shows the approval prompt. It also refuses
+to put a user into a group that was created after the last restart, because that user could
+not connect; restart first, then repeat. Deleting a user
 is done without a question. Deleting a group is done without a question too, unless a member
 would lose MFA, a block or its authentication method with the group; then it is refused.
 
-**Restart.** No tool restarts Access Server by itself. Two changes work fully only after a
-warm restart: a new group (its members cannot connect until then) and a user put into a
-group. The tools say so in the approval question and in the result, and `warm_restart` does
-the restart when you ask for it. It asks for your approval every time, also with
+**Restart.** No tool restarts Access Server by itself. One change needs a warm restart: a
+new group. Until the restart Access Server refuses the VPN connections of its members
+("User authentication failed"). `create_group` says so, and a user put into such a group gets
+the line "group ... was created after the last restart: ... cannot connect until a warm
+restart". The server remembers the groups it created in `<config dir>/fresh_groups.json`, so
+this also works in a later session; a restart made anywhere, also in the Admin UI, clears it.
+A group created in the Admin UI is not known to the server and gets no such line.
+A user moved to another group gets it at the next VPN connection. A running session keeps
+the old access, a restart does not change that (measured on 3.1.0 and 3.2.4); the tool says
+so when the user is connected, and `disconnect_vpn_sessions` ends the session.
+`warm_restart` does the restart when you ask for it. It asks for your approval every time,
+also with
 `OPENVPN_AS_APPROVAL=auto`, and the question says how many VPN clients are connected: a warm
 restart can disconnect them, and they have to reconnect. An app that cannot show the
 question (Claude Desktop) cannot restart.
@@ -304,7 +314,8 @@ Known limits of this release:
 
 - Access Server refuses the VPN connections of the members of a **new group** until the server
   is restarted (measured on 3.1.0 and 3.2.4). `create_group` says so; restart with
-  `warm_restart`. The server cannot tell whether a group still waits for a restart.
+  `warm_restart`. Access Server cannot tell whether a group still waits for a restart;
+  as-mcp-server knows it only for the groups it created itself.
 - Download links cannot be listed or revoked. Blocking the user later does not stop an unused
   link, though the downloaded profile cannot connect while the user is blocked.
 - A user cannot be taken out of every group, and an existing user cannot get a new password.

@@ -33,12 +33,22 @@ NOTE_RESTARTED = (
     "disconnected and reconnect by themselves. Groups created before the restart "
     "work now."
 )
-WARN_GROUP_RESTART = (
-    "the group applies fully to the user only after a warm restart (warm_restart)"
+WARN_FRESH_GROUP = (
+    "group {group} was created after the last restart: {name} cannot connect "
+    "until a warm restart (warm_restart)"
 )
-NOTE_GROUP_RESTART = (
-    "A user put into a group gets everything from the group only after a warm "
-    "restart; ask the administrator whether to run warm_restart."
+MSG_AUTO_FRESH_GROUP = (
+    "Refused in automatic approval mode: group {group} was created after the last "
+    "restart, and {name} could not connect. Run warm_restart first, then repeat."
+)
+WARN_RECONNECT = (
+    "{name} is connected and keeps the old access until the session ends; "
+    "disconnect_vpn_sessions ends it"
+)
+NOTE_GROUP_MOVE = (
+    "A user moved to another group gets the values of that group at the next VPN "
+    "connection; a running session keeps the old ones until it ends. The members "
+    "of a group created since the last restart cannot connect until warm_restart."
 )
 WARN_OWN_MFA = (
     "the account as-mcp-server signs in with ({name}) will need an MFA code at the "
