@@ -266,6 +266,9 @@ next), `failed`, `refused_changed` (the state changed since you approved), `unkn
 **Secrets go to files, not to the model.** Profiles, download links, generated passwords and
 the support report are saved in `OPENVPN_AS_OUTPUT_DIR` (default `<config dir>/output`,
 created for your user only; files are readable by you only) and the tool returns the path.
+A `~` at the start of `OPENVPN_AS_OUTPUT_DIR` is your home folder. Give a full path: a relative
+one is taken from the working directory of the server process, which your AI app chooses. A
+folder that exists already keeps its permissions; only the files are made private.
 There is no way to pass a password to a tool. Delete a file once it has been delivered. An
 agent that can read files on your machine (Claude Code, Codex) can read this folder too.
 

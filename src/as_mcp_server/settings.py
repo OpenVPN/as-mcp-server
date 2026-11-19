@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
@@ -41,5 +41,11 @@ class Settings(BaseSettings):
     approval: Approval = "prompt"
     output_dir: Path | None = None
 
+    @field_validator("ca_cert", "config_dir", "output_dir")
+    @classmethod
+    def _home(cls, value: Path | None) -> Path | None:
+        """`~` is the home folder: a JSON client config has no shell to expand it."""
+        return None if value is None else value.expanduser()
+
     def resolved_output_dir(self) -> Path:
-        return self.output_dir or self.config_dir / "output"
+        return (self.output_dir or self.config_dir / "output").absolute()

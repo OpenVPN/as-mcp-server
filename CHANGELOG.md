@@ -94,6 +94,8 @@ and sessions. It is off by default, and every change is shown for approval first
 - `OPENVPN_AS_LOG_LEVEL` now sets the level of as-mcp-server's own lines only. Libraries
   log from WARNING up, so `DEBUG` no longer prints the HTTP library's lines with response
   headers, and `INFO` no longer prints full request URLs.
+- A `~` at the start of `OPENVPN_AS_OUTPUT_DIR`, `OPENVPN_AS_CONFIG_DIR` or
+  `OPENVPN_AS_CA_CERT` is the home folder. It was taken as a folder named `~` before.
 
 ## [0.1.0] - 2026-10-05
 
