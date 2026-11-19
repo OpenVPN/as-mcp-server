@@ -12,7 +12,7 @@ body:
   - type: textarea
     id: connection_info
     attributes:
-      label: Output of `uvx as-mcp-server check` (or the connection_info tool)
+      label: Output of `uvx --python 3.13 as-mcp-server check` (or the connection_info tool)
       render: text
   - type: input
     id: versions

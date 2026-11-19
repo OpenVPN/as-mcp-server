@@ -10,7 +10,7 @@ question in a real app. This checklist does. Fill one table per release.
   account for the agent, and throwaway names for everything you create (`qa-u1`, `qa-g1`).
 - Add the server to the app with `OPENVPN_AS_WRITE_TOOLS=true`. Leave `OPENVPN_AS_APPROVAL`
   unset unless a check says `auto`.
-- `uvx as-mcp-server check` must print `Writes:   on (OPENVPN_AS_WRITE_TOOLS=true), approval:
+- `uvx --python 3.13 as-mcp-server check` must print `Writes:   on (OPENVPN_AS_WRITE_TOOLS=true), approval:
   prompt`.
 - After each run look at `<config dir>/audit.jsonl` and at the files in
   `<config dir>/output`.

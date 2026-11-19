@@ -20,8 +20,8 @@ from as_mcp_server.settings import Settings
 
 DEFAULT_PROFILE = "default"
 SETUP_HINT = (
-    'Run "uvx as-mcp-server setup" once, or set OPENVPN_AS_URL, OPENVPN_AS_USER and '
-    "OPENVPN_AS_PASSWORD in the MCP server's environment."
+    'Run "uvx --python 3.13 as-mcp-server setup" once, or set OPENVPN_AS_URL, '
+    "OPENVPN_AS_USER and OPENVPN_AS_PASSWORD in the MCP server's environment."
 )
 INSECURE_WARNING = (
     "TLS certificate verification is DISABLED (OPENVPN_AS_INSECURE=true); traffic "
@@ -138,13 +138,13 @@ def _keyring_password(profile: str) -> str:
     except secrets.SecretStoreError as exc:
         raise ConfigError(
             f'No password is available for profile "{profile}": {exc}. Either run '
-            '"uvx as-mcp-server setup" on a machine with an OS keyring, or set '
-            "OPENVPN_AS_PASSWORD in the MCP server's environment."
+            '"uvx --python 3.13 as-mcp-server setup" on a machine with an OS keyring, '
+            "or set OPENVPN_AS_PASSWORD in the MCP server's environment."
         ) from exc
     if password is None:
         raise ConfigError(
             f'No password is stored for profile "{profile}" in the OS keyring. '
-            'Run "uvx as-mcp-server setup" or set OPENVPN_AS_PASSWORD.'
+            'Run "uvx --python 3.13 as-mcp-server setup" or set OPENVPN_AS_PASSWORD.'
         )
     return password
 

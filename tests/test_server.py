@@ -129,7 +129,7 @@ async def test_connection_info_explains_a_missing_configuration_instead_of_faili
         "challenge": None,
     }
     assert "not configured" in result["error"]
-    assert "uvx as-mcp-server setup" in result["error"]
+    assert "uvx --python 3.13 as-mcp-server setup" in result["error"]
     assert result["config"]["keyring_backend"].startswith("unavailable")
     assert result["mcp_version"] == __version__
 

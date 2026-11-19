@@ -120,7 +120,7 @@ MSG_SAML_REQUIRED = (
     "succeed. Use an administrator whose authentication method is not SAML: Access "
     "Server sets the method per user (auth_method in list_users, user_auth_type in "
     'sacli; the built-in "openvpn" administrator uses local), then re-run '
-    '"uvx as-mcp-server setup".'
+    '"uvx --python 3.13 as-mcp-server setup".'
 )
 MSG_EXPIRY_UNREADABLE = (
     "Access Server sent a token expiry that could not be read (%r); the token is "
@@ -143,7 +143,8 @@ MSG_LOCKOUT = (
 MSG_BAD_CREDENTIALS = (
     'Access Server rejected the login for user "{user}" at {url} (403: {reason}). '
     "Either the password is wrong or the user is not an administrator (admin "
-    'privileges are required). Re-run "uvx as-mcp-server setup" with an admin account.'
+    "privileges are required). Re-run "
+    '"uvx --python 3.13 as-mcp-server setup" with an admin account.'
 )
 MSG_NOT_ADMIN = (
     'User "{user}" authenticated but is not an administrator '

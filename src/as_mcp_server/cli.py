@@ -41,13 +41,13 @@ from as_mcp_server.versions import (
 AGENT_CONFIG_SNIPPET = """\
 Register the server with your agent (no secret is stored in its configuration):
 
-  Claude Code:  claude mcp add openvpn-as -- uvx as-mcp-server
-  Codex CLI:    codex mcp add openvpn-as -- uvx as-mcp-server
-  Gemini CLI:   gemini mcp add -s user openvpn-as uvx as-mcp-server
-  OpenCode:     opencode mcp add openvpn-as -- uvx as-mcp-server
+  Claude Code:  claude mcp add openvpn-as -- uvx --python 3.13 as-mcp-server
+  Codex CLI:    codex mcp add openvpn-as -- uvx --python 3.13 as-mcp-server
+  Gemini CLI:   gemini mcp add -s user openvpn-as uvx -- --python 3.13 as-mcp-server
+  OpenCode:     opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server
 
-The command is "uvx" with the argument "as-mcp-server". Configuration file formats for
-VS Code, Cursor, Claude Desktop and the others:
+The command is "uvx" with the arguments "--python", "3.13" and "as-mcp-server".
+Configuration file formats for VS Code, Cursor, Claude Desktop and the others:
 https://github.com/OpenVPN/as-mcp-server#agent-setup
 """
 

@@ -92,7 +92,8 @@ def test_profile_and_keyring_fill_what_the_environment_leaves_empty(
 def test_missing_url_or_user_says_how_to_configure(
     tmp_path: Path, memory_keyring
 ) -> None:
-    with pytest.raises(ConfigError, match='Run "uvx as-mcp-server setup"'):
+    hint = 'Run "uvx --python 3.13 as-mcp-server setup"'
+    with pytest.raises(ConfigError, match=hint):
         resolve(Settings(config_dir=tmp_path))
     with pytest.raises(ConfigError, match="not configured"):
         resolve(Settings(url="https://x.example", config_dir=tmp_path))

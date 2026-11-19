@@ -107,8 +107,8 @@ def test_setup_verifies_then_stores_profile_and_password(
         in out
     )
     assert "password stored in the OS keyring" in out
-    assert "claude mcp add openvpn-as -- uvx as-mcp-server" in out
-    assert "gemini mcp add -s user openvpn-as uvx as-mcp-server" in out
+    assert "claude mcp add openvpn-as -- uvx --python 3.13 as-mcp-server" in out
+    assert "gemini mcp add -s user openvpn-as uvx -- --python 3.13 as-mcp-server" in out
     assert "as-mcp-server#agent-setup" in out
     assert read_profiles(config_dir) == {
         "default": Profile("https://vpn.example.com:943", "openvpn")

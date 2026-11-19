@@ -96,6 +96,11 @@ and sessions. It is off by default, and every change is shown for approval first
   headers, and `INFO` no longer prints full request URLs.
 - A `~` at the start of `OPENVPN_AS_OUTPUT_DIR`, `OPENVPN_AS_CONFIG_DIR` or
   `OPENVPN_AS_CA_CERT` is the home folder. It was taken as a folder named `~` before.
+- Every `uvx` command in the README, in `--help` and in the error messages now names the
+  Python version: `uvx --python 3.13 as-mcp-server`. On a machine without Python a recent uv
+  picked Python 3.15, for which two pinned dependencies have no ready-made build, and the
+  install failed without a compiler. If you registered the server as `uvx as-mcp-server`,
+  add `--python 3.13` to the entry. On macOS the keyring may ask once after the change.
 
 ## [0.1.0] - 2026-10-05
 

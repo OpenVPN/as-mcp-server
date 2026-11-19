@@ -34,7 +34,7 @@ them yourself.
    saves URL and username to `~/.config/as-mcp-server/profiles.toml` and the password in your
    OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service):
 
-       uvx as-mcp-server setup
+       uvx --python 3.13 as-mcp-server setup
 
    If the account needs a second sign-in step you are asked for it as well, with the server's
    own prompt (the authenticator code, or for example a PIN from a RADIUS back end).
@@ -43,18 +43,24 @@ them yourself.
    secret in this configuration.
 4. Ask the agent something: "Is my VPN healthy?" It will call `get_status_overview`.
 
-Pin a version if you want upgrades to be explicit: `uvx as-mcp-server@0.2.0`. `uvx` keeps
+Pin a version if you want upgrades to be explicit: `uvx --python 3.13 as-mcp-server@0.2.0`. `uvx` keeps
 using the version it first cached until you pass `@latest` or run `uv cache clean`.
+
+Every command names the Python version (`--python 3.13`); uv downloads that Python itself if
+it is missing. Without the flag uv picks the newest Python it can find, and a release keeps
+the exact dependency versions it was tested with, some of which have no ready-made build for
+a Python that came out later: the install then needs a C and Rust compiler, or fails. Python
+3.12 works as well.
 
 ### Agent setup
 
 | Agent | Command | Configuration file |
 | --- | --- | --- |
-| Claude Code | `claude mcp add openvpn-as -- uvx as-mcp-server` | `~/.claude.json` (add `--scope user` to use it in every project) |
-| Codex CLI | `codex mcp add openvpn-as -- uvx as-mcp-server` | `~/.codex/config.toml` |
-| Gemini CLI | `gemini mcp add -s user openvpn-as uvx as-mcp-server` (no `--`) | `~/.gemini/settings.json` |
-| OpenCode | `opencode mcp add openvpn-as -- uvx as-mcp-server` | `~/.config/opencode/opencode.json` (or `.jsonc`) |
-| VS Code | `code --add-mcp '{"name":"openvpn-as","command":"uvx","args":["as-mcp-server"]}'` | the user profile's `mcp.json` ("MCP: Open User Configuration"), or `.vscode/mcp.json` in a project |
+| Claude Code | `claude mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.claude.json` (add `--scope user` to use it in every project) |
+| Codex CLI | `codex mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.codex/config.toml` |
+| Gemini CLI | `gemini mcp add -s user openvpn-as uvx -- --python 3.13 as-mcp-server` (the `--` comes after `uvx`) | `~/.gemini/settings.json` |
+| OpenCode | `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.config/opencode/opencode.json` (or `.jsonc`) |
+| VS Code | `code --add-mcp '{"name":"openvpn-as","command":"uvx","args":["--python","3.13","as-mcp-server"]}'` | the user profile's `mcp.json` ("MCP: Open User Configuration"), or `.vscode/mcp.json` in a project |
 | Cursor | - | `~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project |
 | Claude Desktop | - | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` (Settings, Developer, Edit Config) |
 
@@ -66,7 +72,7 @@ Code's project file `.mcp.json`):
 
     {
       "mcpServers": {
-        "openvpn-as": { "command": "uvx", "args": ["as-mcp-server"] }
+        "openvpn-as": { "command": "uvx", "args": ["--python", "3.13", "as-mcp-server"] }
       }
     }
 
@@ -74,7 +80,7 @@ VS Code:
 
     {
       "servers": {
-        "openvpn-as": { "type": "stdio", "command": "uvx", "args": ["as-mcp-server"] }
+        "openvpn-as": { "type": "stdio", "command": "uvx", "args": ["--python", "3.13", "as-mcp-server"] }
       }
     }
 
@@ -82,14 +88,14 @@ Codex CLI:
 
     [mcp_servers.openvpn-as]
     command = "uvx"
-    args = ["as-mcp-server"]
+    args = ["--python", "3.13", "as-mcp-server"]
 
 OpenCode 1.x (the command is one array, the server sits directly under `mcp`):
 
     {
       "$schema": "https://opencode.ai/config.json",
       "mcp": {
-        "openvpn-as": { "type": "local", "command": ["uvx", "as-mcp-server"] }
+        "openvpn-as": { "type": "local", "command": ["uvx", "--python", "3.13", "as-mcp-server"] }
       }
     }
 
@@ -98,12 +104,12 @@ OpenCode 2 (the server sits under `mcp.servers`):
     {
       "mcp": {
         "servers": {
-          "openvpn-as": { "type": "local", "command": ["uvx", "as-mcp-server"] }
+          "openvpn-as": { "type": "local", "command": ["uvx", "--python", "3.13", "as-mcp-server"] }
         }
       }
     }
 
-Both versions have the `opencode mcp add openvpn-as -- uvx as-mcp-server` command; 1.x writes
+Both versions have the `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` command; 1.x writes
 the first form.
 
 ### Alternative: environment variables (headless Linux, CI, or by preference)
@@ -114,7 +120,7 @@ KEY=value` for Gemini CLI and Claude Code. Claude Code reads every word after `-
 variable, so put the server name first:
 
     claude mcp add openvpn-as -e OPENVPN_AS_URL=https://vpn.example.com:943 \
-      -e OPENVPN_AS_USER=mcp-admin -e OPENVPN_AS_PASSWORD=... -- uvx as-mcp-server
+      -e OPENVPN_AS_USER=mcp-admin -e OPENVPN_AS_PASSWORD=... -- uvx --python 3.13 as-mcp-server
 
 In a configuration file the variables go into `env` next to `command` (Claude Desktop, Cursor,
 Gemini CLI, VS Code, Claude Code), into `environment` for OpenCode, and into a
@@ -124,7 +130,7 @@ Gemini CLI, VS Code, Claude Code), into `environment` for OpenCode, and into a
       "mcpServers": {
         "openvpn-as": {
           "command": "uvx",
-          "args": ["as-mcp-server"],
+          "args": ["--python", "3.13", "as-mcp-server"],
           "env": {
             "OPENVPN_AS_URL": "https://vpn.example.com:943",
             "OPENVPN_AS_USER": "mcp-admin",
@@ -139,7 +145,7 @@ Environment variables override the stored profile field by field.
 
 ### Check it works
 
-    uvx as-mcp-server check
+    uvx --python 3.13 as-mcp-server check
 
 prints the URL, user, where each value came from, TLS mode and the server version. Inside a
 conversation the equivalent is the `connection_info` tool, which never fails and reports any
@@ -199,10 +205,10 @@ Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers thirteen
 
 How to switch it on, for Claude Code:
 
-    claude mcp add openvpn-as -e OPENVPN_AS_WRITE_TOOLS=true -- uvx as-mcp-server
+    claude mcp add openvpn-as -e OPENVPN_AS_WRITE_TOOLS=true -- uvx --python 3.13 as-mcp-server
 
 (or add `"OPENVPN_AS_WRITE_TOOLS": "true"` to the `env` block of your agent's MCP configuration).
-`uvx as-mcp-server check` and the `connection_info` tool show whether write mode is on.
+`uvx --python 3.13 as-mcp-server check` and the `connection_info` tool show whether write mode is on.
 
 **Approval.** Before anything is written, the server shows you what will change (the server,
 the action, every target with `field: before -> after`, and the side effects) and asks for a
@@ -319,7 +325,7 @@ Known limits of this release:
 Reserved for later releases, not implemented yet: `OPENVPN_AS_PROFILE`, `OPENVPN_AS_TOOLS`,
 `OPENVPN_AS_EXTRA_HEADERS`.
 
-Remove stored credentials with `uvx as-mcp-server setup --clear`.
+Remove stored credentials with `uvx --python 3.13 as-mcp-server setup --clear`.
 
 ## Logs and debugging
 
@@ -328,7 +334,7 @@ Remove stored credentials with `uvx as-mcp-server setup --clear`.
   passwords and tokens are never logged. The level applies to as-mcp-server's own lines;
   the libraries it uses log from WARNING up.
 - The reliable way to read the log is a terminal: `OPENVPN_AS_LOG_LEVEL=DEBUG uvx
-  as-mcp-server check` performs the same login and `GET /server/info` as the
+  --python 3.13 as-mcp-server check` performs the same login and `GET /server/info` as the
   `connection_info` tool and prints the log next to the result.
 - Inside an agent, where stderr ends up is the agent's business. Claude Code has no log view
   in its `/mcp` panel (it offers View tools, Reconnect and Disable); it writes each server's
@@ -405,8 +411,9 @@ it `user_auth_type`), and the built-in `openvpn` administrator uses `local`.
   (prompt injection), but only you can approve it. `OPENVPN_AS_APPROVAL=auto` removes that
   check, which is why it has hard limits. Read the approval text before you say yes.
 - Use a dedicated admin account so its lockout or revocation affects only the agent.
-- The keyring item is bound to the Python binary on macOS; after a `uvx` upgrade the system
-  may ask once whether the new binary may read it.
+- The keyring item is bound to the Python binary on macOS; after a `uvx` upgrade, or the
+  first run with another `--python`, the system may ask once whether the new binary may read
+  it.
 - See `SECURITY.md` for reporting.
 
 ## Compatibility
