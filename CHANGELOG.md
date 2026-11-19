@@ -21,7 +21,8 @@ and sessions. It is off by default, and every change is shown for approval first
   The answer is bound to the call and to the state that was shown; a changed state is read
   again and refused. An app that cannot ask gets a fixed message and nothing changes.
 - Automatic approval (`OPENVPN_AS_APPROVAL=auto`) with hard limits: nobody becomes an
-  administrator, MFA is not switched off, no authentication method is changed, autologin is
+  administrator, MFA is not switched off, no authentication method is changed, no user is
+  created with a method other than the one it would inherit, autologin is
   not switched on, no autologin profile or link is created.
 - The account the server signs in with cannot be deleted, blocked, demoted, moved to another
   group or switched to another authentication method, also not through its group.

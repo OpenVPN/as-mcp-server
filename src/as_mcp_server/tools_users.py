@@ -454,6 +454,24 @@ class _CreateUser:
         return Plan(
             PreviewItem(name, changes, tuple(effects)),
             (Effect("user", name, None, _guarded(after)),),
+            self._auto_reason(item, before, own, method),
+        )
+
+    def _auto_reason(
+        self, item: NewUser, before: dict[str, Any], own: Own, method: Any
+    ) -> str | None:
+        """A method of its own, other than the one the user would inherit."""
+        if item.auth_method is None:
+            return None
+        fields = {k: v for k, v in self._fields(item).items() if k != "auth_method"}
+        inherited = user_after(
+            None, fields, [], before.get("group_state"), own.base, fields=FIELDS
+        )["auth_method"]
+        if inherited == method:
+            return None
+        return (
+            f"user {item.username} would be created with the authentication "
+            f"method {method}"
         )
 
     async def apply(
@@ -1056,7 +1074,9 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "output folder and never returned; there is no way to pass a password "
             "to this tool. Without generate_password the user has no password. "
             "A name that is already a user or a group refuses the whole call. "
-            "Creating an administrator is refused in automatic approval mode. "
+            "Creating an administrator, or a user with an authentication method "
+            "other than the one it would inherit, is refused in automatic approval "
+            "mode. "
             "Each item of 'items': outcome, the state after, and path and "
             "reminder when a password was generated. To give the user a "
             "connection profile, call create_connection_profile afterwards. An "

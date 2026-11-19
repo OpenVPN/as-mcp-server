@@ -574,6 +574,32 @@ async def test_creating_an_admin_is_refused_in_auto_mode(tmp_path: Path) -> None
     assert server.audit()[0]["outcome"] == "refused_auto_limit"
 
 
+async def test_creating_a_user_with_another_method_is_refused_in_auto_mode(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "create_user", {"users": [{"username": "dave", "auth_method": "ldap"}]}
+        )
+    assert str(error.value) == MSG_AUTO_LIMIT.format(
+        reason="user dave would be created with the authentication method ldap"
+    )
+    assert server.written() == []
+    assert server.audit()[0]["outcome"] == "refused_auto_limit"
+    # The method the user would get anyway changes nothing, and a person may
+    # approve another one.
+    same = await server.call(
+        "create_user", {"users": [{"username": "dave", "auth_method": "local"}]}
+    )
+    assert only(same)["outcome"] == "done"
+    prompt = FakeServer(tmp_path / "prompt")
+    asked = await prompt.call(
+        "create_user", {"users": [{"username": "erin", "auth_method": "ldap"}]}
+    )
+    assert only(asked)["outcome"] == "done"
+
+
 async def test_creating_a_user_in_an_admin_group_is_refused_in_auto_mode(
     tmp_path: Path,
 ) -> None:

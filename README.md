@@ -232,7 +232,8 @@ reported a cancelled change as done; `audit.jsonl` (below) says what really happ
 
 **Automatic approval.** `OPENVPN_AS_APPROVAL=auto` makes changes without asking. Use it only
 where you trust the agent and its inputs. Even then the server never: gives administrator
-rights, switches MFA off, changes an authentication method, switches autologin on, creates an
+rights, switches MFA off, changes an authentication method, creates a user with an
+authentication method other than the one it would inherit, switches autologin on, creates an
 autologin profile or link, switches MFA on for the account it signs in with itself, or makes
 a change whose result it cannot compute. These are
 refused with the reason; make them in an app that shows the approval prompt. Deleting a user

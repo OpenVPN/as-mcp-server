@@ -311,6 +311,11 @@ async def test_the_own_account_and_automatic_mode_are_guarded_on_a_real_server(
             f"user {scratch.user} would become an administrator",
         ),
         (
+            "create_user",
+            {"users": [{"username": scratch.user, "auth_method": "pam"}]},
+            f"user {scratch.user} would be created with the authentication method pam",
+        ),
+        (
             "update_user",
             {"usernames": ["alice"], "autologin": True},
             "autologin would be switched on for user alice",
