@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -12,6 +14,8 @@ import pytest
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
+from mcp.server import request_state
+from mcp.shared.exceptions import MCPError
 
 from as_mcp_server import approval, texts
 from as_mcp_server.audit import AuditError, AuditLog
@@ -24,6 +28,7 @@ from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_CHANGED,
+    MSG_LATE_ANSWER,
     MSG_LOCKOUT,
     MSG_NO_ELICITATION,
 )
@@ -32,6 +37,7 @@ from as_mcp_server.writes import (
     MSG_EARLIER_ITEMS_WRITTEN,
     MSG_INTERRUPTED,
     NOTE_LIVE,
+    LateAnswer,
     Own,
     Partial,
     Plan,
@@ -40,7 +46,16 @@ from as_mcp_server.writes import (
     read_user,
     run_write,
 )
-from tests.conftest import LOGIN, MODES, Router, body_of, call_tool, load_fixture
+from tests.conftest import (
+    LOGIN,
+    MODES,
+    Router,
+    body_of,
+    call_tool,
+    elicitation_handler,
+    load_fixture,
+)
+from tests.test_approval import YES
 from tests.test_effective import own as own_value
 from tests.test_effective import record
 
@@ -963,3 +978,49 @@ def test_the_fixed_texts_are_the_ones_agreed_in_the_design() -> None:
     assert texts.DEFAULT_REASON == "Disconnected through as-mcp-server"
     assert texts.CLIENT_REASON == "Disconnected by your administrator."
     assert texts.MSG_ONE_TARGET == "Give exactly one of {a} or {b}."
+
+
+async def test_a_late_answer_is_refused_in_plain_words_and_audited(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stand = Stand(tmp_path)
+    stand.mcp.add_middleware(LateAnswer(stand.deps))
+    arguments = {"items": to(2, "a")}
+    handler = elicitation_handler("accept")
+    options = {"mode": "2026-07-28", "elicitation_handler": handler}
+    async with Client(stand.mcp, **options) as client:
+        asked = await client.session.call_tool(
+            "fake_change", arguments, allow_input_required=True
+        )
+        later = time.time() + 601
+        monkeypatch.setattr(request_state, "time", SimpleNamespace(time=lambda: later))
+        with pytest.raises(MCPError) as refused:
+            await client.session.call_tool(
+                "fake_change",
+                arguments,
+                input_responses=YES,
+                request_state=asked.request_state,
+                allow_input_required=True,
+            )
+    message = MSG_LATE_ANSWER.format(tool="fake_change")
+    assert refused.value.error.message == message
+    assert "more than 10 minutes" in message and "Nothing was changed" in message
+    assert stand.op.applied == []
+    (line,) = stand.audit()
+    assert line["outcome"] == "refused_no_approval" and line["error"] == message
+    assert line["tool"] == "fake_change" and '"a"' in line["target"]
+    assert line["admin_user"] == "openvpn"
+
+
+async def test_another_protocol_error_is_passed_on_unchanged(tmp_path: Path) -> None:
+    stand = Stand(tmp_path)
+    other = MCPError(code=-32602, message="Unknown tool", data={"reason": "other"})
+
+    async def call_next(context: Any) -> Any:
+        raise other
+
+    context = SimpleNamespace(method="tools/call", message=None)
+    with pytest.raises(MCPError) as refused:
+        await LateAnswer(stand.deps).on_message(context, call_next)
+    assert refused.value is other
+    assert stand.audit() == []

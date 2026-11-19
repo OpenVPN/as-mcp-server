@@ -19,6 +19,8 @@ from typing import Any, Protocol
 import mcp_types
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
+from mcp.shared.exceptions import MCPError
 from mcp.types import ToolAnnotations
 
 from as_mcp_server.approval import Decision, ask, binding, canonical
@@ -48,6 +50,7 @@ from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_CHANGED,
+    MSG_LATE_ANSWER,
     MSG_LOCKOUT,
     MSG_NO_ELICITATION,
     WARN_OWN_MFA,
@@ -378,6 +381,54 @@ class _Run:
             after = _predicted(row) if predicted else None
             self.audit(row, outcome, after=after, error=error or message)
         return ToolError(message)
+
+
+class LateAnswer(Middleware):
+    """An approval answer the framework turned down before any tool ran.
+
+    The framework keeps a question open for 10 minutes and answers anything later,
+    or anything it did not issue, with one fixed protocol error. This puts the
+    attempt into the audit log and says in plain words what happened.
+    """
+
+    def __init__(self, deps: WriteDeps) -> None:
+        self.deps = deps
+
+    async def on_message(self, context: Any, call_next: Any) -> Any:
+        try:
+            return await call_next(context)
+        except MCPError as exc:
+            data = exc.error.data
+            if not (
+                context.method == "tools/call"
+                and isinstance(data, dict)
+                and data.get("reason") == "invalid_request_state"
+            ):
+                raise
+            params = context.message if isinstance(context.message, dict) else {}
+            tool = clean(str(params.get("name", "")))
+            message = MSG_LATE_ANSWER.format(tool=tool)
+            self._audit(tool, params.get("arguments"), message)
+            raise MCPError(code=exc.error.code, message=message, data=data) from exc
+
+    def _audit(self, tool: str, arguments: Any, message: str) -> None:
+        try:
+            config = self.deps.holder.get().config
+            self.deps.audit.append(
+                tool=tool,
+                target=canonical(arguments or {}),
+                outcome="refused_no_approval",
+                approval="prompt",
+                server_url=config.url,
+                server_version="",
+                version_tested=True,
+                admin_user=config.username,
+                before=None,
+                after=None,
+                error=message,
+            )
+        except ToolError as exc:
+            log.warning("%s", exc)
 
 
 def _predicted(row: _Row) -> Any:

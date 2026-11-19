@@ -10,6 +10,11 @@ MSG_NO_ELICITATION = (
     "being asked."
 )
 MSG_CHANGED = "Changed on the server since the preview; nothing was written."
+MSG_LATE_ANSWER = (
+    "Refused: the answer to the approval question of {tool} came more than 10 minutes "
+    "after the question, or does not belong to it. Nothing was changed. Call {tool} "
+    "again to be asked anew."
+)
 MSG_LOCKOUT = (
     "Refused: this change would lock as-mcp-server out of its own admin account "
     "({name}). Make it in the Admin UI if it is really intended."

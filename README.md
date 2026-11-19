@@ -220,6 +220,10 @@ want the change. An app that cannot show the question gets this answer and nothi
 "Your AI app cannot show an approval prompt, so as-mcp-server did not make this change. Use
 an app that supports MCP elicitation, or set OPENVPN_AS_APPROVAL=auto in the MCP server
 settings to make changes without being asked."
+With an app that speaks the MCP protocol of 2026-07-28 a question stays open for 10 minutes.
+A later answer is refused ("... came more than 10 minutes after the question, or does not
+belong to it. Nothing was changed. ..."), nothing changes and the audit log gets a
+`refused_no_approval` line; ask for the change again.
 
 **What your app shows of the question.** Apps differ, so the first three lines carry the
 most: the server, the action with the number of targets and the first three names, and a

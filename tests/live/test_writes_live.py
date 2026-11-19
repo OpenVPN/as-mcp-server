@@ -9,24 +9,30 @@ import json
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
+from mcp.server import request_state
+from mcp.shared.exceptions import MCPError
 
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
+    MSG_LATE_ANSWER,
     MSG_LOCKOUT,
     MSG_NO_ELICITATION,
 )
-from tests.conftest import call_tool
+from tests.conftest import call_tool, elicitation_handler
 from tests.live.vpn_clients import VpnClient, for_the_stand, require_client_image
+from tests.test_approval import YES
 
 SCRATCH = "live-write-user"
 
@@ -538,3 +544,32 @@ async def test_the_support_report_is_saved_whole_and_stays_out_of_the_result(
     assert secrets and all(line.endswith(": [redacted]") for line in secrets)
     assert "PRIVATE KEY-----" not in text
     assert not (tmp_path / "audit.jsonl").exists()
+
+
+async def test_an_approval_answered_after_ten_minutes_changes_nothing(
+    live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arguments = {"usernames": [SCRATCH]}
+    handler = elicitation_handler("accept")
+    options = {"mode": "2026-07-28", "elicitation_handler": handler}
+    async with Client(live.mcp, **options) as client:
+        asked = await client.session.call_tool(
+            "block_user", arguments, allow_input_required=True
+        )
+        later = time.time() + 601
+        monkeypatch.setattr(request_state, "time", SimpleNamespace(time=lambda: later))
+        with pytest.raises(MCPError) as refused:
+            await client.session.call_tool(
+                "block_user",
+                arguments,
+                input_responses=YES,
+                request_state=asked.request_state,
+                allow_input_required=True,
+            )
+        monkeypatch.undo()
+    assert refused.value.error.message == MSG_LATE_ANSWER.format(tool="block_user")
+    line = live.audit()[-1]
+    assert line["tool"] == "block_user" and line["outcome"] == "refused_no_approval"
+    assert SCRATCH in line["target"] and line["server_url"] == live.settings.url
+    (user,) = (await live.call("list_users", {"usernames": [SCRATCH]}))["profiles"]
+    assert user["deny"]["value"] is False

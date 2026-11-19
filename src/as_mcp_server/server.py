@@ -21,7 +21,7 @@ from as_mcp_server.tools_profiles import register_profile_tools
 from as_mcp_server.tools_restart import register_restart_tools
 from as_mcp_server.tools_sessions import register_session_tools
 from as_mcp_server.tools_users import register_user_tools
-from as_mcp_server.writes import WriteDeps
+from as_mcp_server.writes import LateAnswer, WriteDeps
 
 log = logging.getLogger(__name__)
 
@@ -158,5 +158,7 @@ def build(
     holder = ClientHolder(settings, profile, transport)
     register_tools(mcp, holder)
     if settings.write_tools:
-        register_write_tools(mcp, WriteDeps(holder, AuditLog(settings.config_dir)))
+        deps = WriteDeps(holder, AuditLog(settings.config_dir))
+        mcp.add_middleware(LateAnswer(deps))
+        register_write_tools(mcp, deps)
     return mcp
