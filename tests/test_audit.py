@@ -130,7 +130,10 @@ def test_a_value_json_cannot_hold_is_written_as_text_not_dropped(
         )
     )
     before = lines(tmp_path)[0]["before"]
-    assert before == {"path": "/tmp/x", "when": "2026-01-02 00:00:00+00:00"}
+    assert before == {
+        "path": str(Path("/tmp/x")),
+        "when": "2026-01-02 00:00:00+00:00",
+    }
 
 
 @posix_only

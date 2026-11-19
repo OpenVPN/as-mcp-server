@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import stat
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,10 @@ from tests.conftest import load_fixture as fixture
 from tests.test_effective import own as own_value
 from tests.test_effective import record
 from tests.test_writes import users_route
+
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX file modes do not exist on Windows"
+)
 
 pytestmark = pytest.mark.usefixtures("clean_env")
 
@@ -214,7 +219,8 @@ async def test_a_created_profile_goes_to_a_file_and_never_into_the_result(
     assert path.read_text("utf-8") == PROFILE_BODY.replace(
         "1810972200425098125", new_serial
     )
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert result["notes"] == [NOTE_LIVE]
     assert_no_secret(
         json.dumps(result), "\n".join(seen), server.audit_text(), caplog.text
@@ -362,7 +368,7 @@ async def test_a_profile_that_cannot_be_saved_is_reported_as_partial(
     assert_no_secret(json.dumps(result), server.audit_text())
 
 
-@pytest.mark.skipif(not hasattr(Path, "chmod"), reason="needs POSIX modes")
+@posix_only
 async def test_a_read_only_folder_is_noticed_before_anything_is_created(
     tmp_path: Path,
 ) -> None:
@@ -377,6 +383,7 @@ async def test_a_read_only_folder_is_noticed_before_anything_is_created(
     assert server.sent(CREATE) == []
 
 
+@posix_only
 async def test_no_link_is_created_when_it_could_not_be_saved(tmp_path: Path) -> None:
     """A link cannot be revoked, so the folder is tried before the server is asked."""
     server = FakeServer(tmp_path)
@@ -490,7 +497,8 @@ async def test_a_download_link_goes_to_a_file_with_its_expiry(
     assert path.read_text("utf-8") == (
         f"{LINK}\nvalid until 2026-11-13T13:00:00+00:00, 2 use(s)\n"
     )
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert "https://" not in json.dumps(result) and "://" not in json.dumps(result)
     assert server.sent(TOKEN_URL) == [
         {
