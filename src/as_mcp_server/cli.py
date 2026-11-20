@@ -56,7 +56,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="as-mcp-server",
         description=(
-            "Local MCP server for OpenVPN Access Server (read-only). "
+            "Local MCP server for OpenVPN Access Server. It is read-only until "
+            "OPENVPN_AS_WRITE_TOOLS=true switches the write tools on. "
             "Without a subcommand it serves MCP over stdio, which is what agents "
             "launch."
         ),

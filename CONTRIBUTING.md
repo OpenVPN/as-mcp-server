@@ -1,6 +1,6 @@
 # Contributing
 
-- Public names are frozen: the 13 tool names, the `OPENVPN_AS_*` variables, the CLI subcommands, `profiles.toml` and the keyring service `as-mcp-server` (see the tables in `README.md`).
+- Public names are frozen: the tool names (15 read tools and 13 write tools, see the tables in `README.md`), the `OPENVPN_AS_*` variables, the CLI subcommands, `profiles.toml` and the keyring service `as-mcp-server`.
 - `make install`, then `make check` must be green before every commit; tests never reach the network.
 - New tools need: a typed signature, a description that says which question it answers, honest
   `ToolAnnotations`, a fixture captured from a real server (`tests/fixtures/README.md`), and a

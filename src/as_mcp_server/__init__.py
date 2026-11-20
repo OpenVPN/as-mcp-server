@@ -1,4 +1,4 @@
-"""Local MCP server for OpenVPN Access Server administrators (read-only)."""
+"""Local MCP server for OpenVPN Access Server administrators (read-only by default)."""
 
 from __future__ import annotations
 

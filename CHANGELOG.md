@@ -90,6 +90,11 @@ and sessions. It is off by default, and every change is shown for approval first
   `get_server_info` now says that its hostname is the machine's name and that the address
   VPN clients connect to is the configuration key `host.name` (an agent answered "what is
   the host name" with the container name).
+- `as-mcp-server --help` and the package description no longer call the server read-only:
+  it is read-only until `OPENVPN_AS_WRITE_TOOLS=true`.
+- README: Claude Desktop stops waiting for a tool after about 80 seconds, so a slow
+  `create_support_report` shows no result there although the file is saved; and where
+  OpenCode keeps a project entry and a user entry.
 - An Access Server version that cannot be read is treated as below the supported minimum.
 - FastMCP 4.1 or newer is required.
 - Tested on Access Server 3.1.0 and 3.2.4.

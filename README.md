@@ -111,6 +111,10 @@ OpenCode 2 (the server sits under `mcp.servers`):
 
 Both versions have the `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` command; 1.x writes
 the first form.
+OpenCode reads two files: `opencode.json` in a project folder, which applies only when
+OpenCode is started from that folder, and `~/.config/opencode/opencode.json`, which applies
+everywhere. If the server is missing in another folder, the entry is in a project file: move
+it to the file in `~/.config/opencode`.
 
 ### Alternative: environment variables (headless Linux, CI, or by preference)
 
@@ -236,6 +240,10 @@ come after these lines. As tested for this release:
 - Codex 0.169.0 shows as many lines as fit the height of the terminal window.
 - Claude Desktop 5.11492.5 does not show the question at all, so it can write only with
   `OPENVPN_AS_APPROVAL=auto`.
+
+Claude Desktop also stops waiting for a tool after about 80 seconds. `create_support_report`
+can take longer (the server waits up to 5 minutes for the report): the chat then shows an
+error or no result, but the report is still saved. Look for the file in the output folder.
 
 What the agent says afterwards is the model's own wording. In one test run an agent
 reported a cancelled change as done; `audit.jsonl` (below) says what really happened.
