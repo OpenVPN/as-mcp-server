@@ -95,6 +95,8 @@ and sessions. It is off by default, and every change is shown for approval first
 - README: Claude Desktop stops waiting for a tool after about 80 seconds, so a slow
   `create_support_report` shows no result there although the file is saved; and where
   OpenCode keeps a project entry and a user entry.
+- README no longer promises the per-request `DEBUG` lines in the MCP log file of Claude
+  Code: that file keeps only what the server wrote while it started.
 - An Access Server version that cannot be read is treated as below the supported minimum.
 - FastMCP 4.1 or newer is required.
 - Tested on Access Server 3.1.0 and 3.2.4.

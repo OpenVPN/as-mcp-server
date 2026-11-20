@@ -363,12 +363,14 @@ Remove stored credentials with `uvx --python 3.13 as-mcp-server setup --clear`.
   --python 3.13 as-mcp-server check` performs the same login and `GET /server/info` as the
   `connection_info` tool and prints the log next to the result.
 - Inside an agent, where stderr ends up is the agent's business. Claude Code has no log view
-  in its `/mcp` panel (it offers View tools, Reconnect and Disable); it writes each server's
-  stderr as `Server stderr: ...` records into
-  `~/Library/Caches/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl` on macOS
-  (`~/.cache/claude-cli-nodejs/...` on Linux), one file per session. `claude --debug` (or
-  `--debug-file <path>`) turns on Claude Code's own debug log, which includes its MCP
-  connection messages.
+  in its `/mcp` panel (it offers View tools, Reconnect and Disable). It keeps a file per
+  session in `~/Library/Caches/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl` on
+  macOS (`~/.cache/claude-cli-nodejs/...` on Linux) with its own records (which tool was
+  called, how long it took) and one `Server stderr: ...` record with what the server wrote
+  while it started. The per-request `DEBUG` lines are not in that file (checked with Claude
+  Code 2.1.329, `claude -p`), although the server writes them: use the terminal `check`
+  above for those. `claude --debug` (or `--debug-file <path>`) turns on Claude Code's own
+  debug log, which includes its MCP connection messages.
 - `OPENVPN_AS_TIMEOUT=60` if the server is slow (default 30 s).
 
 ## MFA and other second sign-in steps
