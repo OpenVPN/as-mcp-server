@@ -270,6 +270,9 @@ A group created in the Admin UI is not known to the server and gets no such line
 A group that is deleted and created again under the same name works without a restart, as
 long as the name was there at the last restart; `create_group` says so for a group that was
 deleted through this server, and warns as for a new group when it was deleted elsewhere.
+Until the next restart Access Server keeps the access rules of the deleted group in its
+firewall (measured on 3.1.0 and 3.2.4), and `create_group` says that too; the other values
+of the new group apply at the next VPN connection.
 A user moved to another group gets it at the next VPN connection. A running session keeps
 the old access, a restart does not change that (measured on 3.1.0 and 3.2.4); the tool says
 so when the user is connected, and `disconnect_vpn_sessions` ends the session.

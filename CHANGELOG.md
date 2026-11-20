@@ -70,7 +70,9 @@ and sessions. It is off by default, and every change is shown for approval first
   user cannot connect until a warm restart; in automatic approval mode they are refused. A
   group created in the Admin UI is not known and gets no warning. A group deleted with
   `delete_group` and created again under the same name before any restart is not treated
-  as new: Access Server still accepts its members (measured on 3.1.0 and 3.2.4).
+  as new: Access Server still accepts its members (measured on 3.1.0 and 3.2.4). The
+  question and the result of `create_group` say that Access Server keeps the access rules
+  of the deleted group until a warm restart.
 - `update_user` that moves a connected user to another group says that the running session
   keeps the old access until it ends. A restart does not change a running session (measured
   on 3.1.0 and 3.2.4).

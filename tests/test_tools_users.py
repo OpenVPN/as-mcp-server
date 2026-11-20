@@ -39,6 +39,7 @@ from as_mcp_server.tools_users import (
     EFFECT_KNOWN_GROUP,
     FIELDS,
     MSG_NOTHING_TO_CHANGE,
+    NOTE_KNOWN_GROUP,
     NOTE_NEW_GROUP,
     generate_password,
     userprop_body,
@@ -2186,7 +2187,9 @@ async def test_a_group_deleted_and_created_again_does_not_wait_for_a_restart(
     result = await prompt.call("create_group", {"name": "Staff"}, seen=seen)
     assert f"    also: {EFFECT_KNOWN_GROUP}" in seen[0]
     assert "cannot connect" not in seen[0]
-    assert result["notes"] == [NOTE_LIVE]
+    assert "access rules of the deleted group until a warm restart" in seen[0]
+    assert result["notes"] == [NOTE_KNOWN_GROUP]
+    assert "warm_restart" in NOTE_KNOWN_GROUP
     assert not server.fresh("staff")
     # So a move into it is an ordinary move, in automatic mode as well.
     moved = await server.call("update_user", {"usernames": ["bob"], "group": "Staff"})

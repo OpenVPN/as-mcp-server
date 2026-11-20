@@ -111,9 +111,18 @@ MAX_NAME = 128
 MAX_MEMBERS_SHOWN = 20
 # A side effect line of the preview is cut at 300 characters.
 MAX_MEMBERS_TEXT = 220
+# Measured on 3.1.0 and 3.2.4: the members get the values of the new group at
+# once, but the firewall of the server keeps the access rules of the deleted one.
 EFFECT_KNOWN_GROUP = (
-    "a group of this name was there at the last restart of Access Server, so its "
-    "members can connect without another restart"
+    "a group of this name was deleted since the last restart of Access Server: "
+    "its members can connect without a restart, but Access Server keeps the "
+    "access rules of the deleted group until a warm restart (warm_restart)"
+)
+NOTE_KNOWN_GROUP = (
+    "The group is saved and its members can connect without a restart. A group "
+    "of this name was deleted since the last restart, and Access Server keeps "
+    "the access rules of the deleted group until a warm restart. Tell the "
+    "administrator, and offer warm_restart if those rules must go now."
 )
 NOTE_NEW_GROUP = (
     "The group is saved. Access Server refuses the VPN connections of its members "
@@ -819,7 +828,7 @@ class _CreateGroup:
             )
         self._known = await _is_known(self.fresh, client, item)
         if self._known:
-            self.note = NOTE_LIVE
+            self.note = NOTE_KNOWN_GROUP
         return {"exists": False}
 
     def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
