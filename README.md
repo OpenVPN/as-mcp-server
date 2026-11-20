@@ -289,11 +289,16 @@ demote the account as-mcp-server signs in with, move it to another group, change
 authentication method or delete its group is refused, also when it would arrive through the
 account's group. Switching MFA on for that account is not a lockout, but the next sign-in
 then needs a code from a person: the approval question says so, and automatic mode refuses
-it.
+it. The account is recognised without looking at letter case: signed in as `openvpn`, a
+user named `OpenVPN` is protected too and has to be changed in the Admin UI. With LDAP or
+RADIUS sign-in and the case-sensitive option off, Access Server treats such names as one user.
 
 **Lists.** A tool that takes a list handles up to 100 items in one call with one approval.
-Every item is checked before anything is written; one bad item refuses the whole call. Items
-are written in order; at the first item that is not done the rest is not attempted. The
+Every item is checked before anything is written; one bad item refuses the whole call. When
+you approve, every item is read again: if one of them changed on the server while the
+question was open, nothing is written and every item is `refused_changed`. After that the
+items are written in order; at the first item that is not done the rest is not attempted.
+Items written before it stay written: nothing is rolled back. The
 result says per item: `done`, `partial` (some steps done; `detail` says which and what to do
 next), `failed`, `refused_changed` (the state changed since you approved), `unknown_after_timeout`
 (the request timed out; it is reported with the state read afterwards and never repeated) or
