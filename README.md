@@ -274,8 +274,10 @@ Until the next restart Access Server keeps the access rules of the deleted group
 firewall (measured on 3.1.0 and 3.2.4), and `create_group` says that too; the other values
 of the new group apply at the next VPN connection.
 A user moved to another group gets it at the next VPN connection. A running session keeps
-the old access, a restart does not change that (measured on 3.1.0 and 3.2.4); the tool says
-so when the user is connected, and `disconnect_vpn_sessions` ends the session.
+the access of the old group, and a restart does not move it to the new group (measured on
+3.1.0 and 3.2.4); the tool says so when the user is connected, and `disconnect_vpn_sessions`
+ends the session. This is about a change of group only: after other changes, such as access
+rules or split-tunnel routes, a warm restart can still make a connected user reconnect.
 `warm_restart` does the restart when you ask for it. It asks for your approval every time,
 also with
 `OPENVPN_AS_APPROVAL=auto`, and the question says how many VPN clients are connected: a warm

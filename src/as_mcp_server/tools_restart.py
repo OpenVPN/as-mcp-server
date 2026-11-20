@@ -5,7 +5,9 @@ administrator asks for the restart and approves it, also in automatic approval
 mode. Measured on 3.1.0 and 3.2.4: `POST /server/restart?restartMode=warm` answers
 200 `{}`, makes a group created since the last restart accept its members, and
 answers 400 when the firewall configuration has errors. A connected client can be
-told to reconnect by a warm restart.
+told to reconnect by a warm restart; the AS team names changed access rules and
+split-tunnel routes as causes. A session of a user who was moved to another group
+is not moved by it (AS-1644).
 """
 
 from __future__ import annotations
@@ -113,9 +115,11 @@ def register_restart_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         description=(
             "Warm restart of Access Server, so that changes that wait for a "
             "restart take effect: a group created since the last restart starts "
-            "to accept the VPN connections of its members. It does not change a "
-            "running VPN session: a user moved to another group gets that group "
-            "at the next connection. Call it only when "
+            "to accept the VPN connections of its members, and access rules "
+            "changed since then reach the firewall of the server. A user moved "
+            "to another group does not need it: the user gets that group at the "
+            "next connection, and a restart does not move a running session to "
+            "the new group. Call it only when "
             "the user asks for a restart, or agrees after a tool said one is "
             "needed; never decide it yourself and never call it after every "
             "change. The administrator is always asked for approval, also in "

@@ -74,8 +74,9 @@ and sessions. It is off by default, and every change is shown for approval first
   question and the result of `create_group` say that Access Server keeps the access rules
   of the deleted group until a warm restart.
 - `update_user` that moves a connected user to another group says that the running session
-  keeps the old access until it ends. A restart does not change a running session (measured
-  on 3.1.0 and 3.2.4).
+  keeps the old access until it ends. A restart does not move a running session to the new
+  group (measured on 3.1.0 and 3.2.4); after other changes, such as access rules, a warm
+  restart can still reconnect a user.
 - `docs/testing.md`: the manual checklist for the approval question in real apps.
 
 ### Changed
