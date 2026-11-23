@@ -421,7 +421,8 @@ def _register_directory_tools(mcp: FastMCP, holder: ClientHolder) -> None:
             "unknown names are silently absent). Returns 'profiles' and 'total'. MFA "
             "secrets are redacted. Profiles carry no lockout state: deny, deny_web, "
             "totp_locked and mfa_status are permanent settings, and whether a user is "
-            "locked out right now cannot be read through this server."
+            "locked out right now cannot be read through this server. Access lists "
+            "are not part of this answer: use list_access_lists."
         ),
         annotations=READ,
         tags={"read"},

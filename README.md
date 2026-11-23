@@ -232,8 +232,10 @@ belong to it. Nothing was changed. ..."), nothing changes and the audit log gets
 **What your app shows of the question.** Apps differ, so the first three lines carry the
 most: the server, the action with the number of targets and the first three names, and a
 `Total:` line (for example `Total: deletes 3 connection profiles, disconnects 1 active
-session, cannot be undone, 1 warning`). The values that change (`field: before -> after`)
-come after these lines. As tested for this release:
+session, cannot be undone, 1 warning`). For `update_user` and `update_group` the `Total:`
+line starts with the change itself: `Total: admin false -> true, autologin false -> true`
+for one target, `Total: changes admin, autologin for 3 users` for several. The full list of
+values (`field: before -> after`) comes after these lines. As tested for this release:
 
 - Claude Code 2.1.325 shows only the first three lines ("... (+N more lines)") and has no
   key to open the rest.
@@ -399,8 +401,8 @@ is not triggered a second time, as long as you answer within about 90 seconds (A
 forgets a challenge after two to three minutes). After a wrong answer or a longer pause the
 server issues a new challenge; if it asks a different question, the agent quotes it before
 anything is sent. Authenticator codes are single-use and must be exactly six digits (a
-mistyped code is refused locally and does not count as a failed attempt); five wrong answers
-lock the account for 15 minutes (Access Server default).
+mistyped code is refused locally and does not count as a failed attempt); more than five
+wrong answers lock the account for 15 minutes (Access Server default).
 
 ### SAML-only accounts
 

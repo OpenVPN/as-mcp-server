@@ -416,7 +416,7 @@
   },
   {
     "name": "list_users",
-    "description": "Users defined on the Access Server (the special __DEFAULT__ user is excluded; use get_default_user for it). Each profile carries admin, autologin, deny, auth_method, group, mfa_status and other properties with inheritance metadata. Filters: name_contains (substring), group (exact group name), admins_only, autologin_only, usernames (exact list; unknown names are silently absent). Returns 'profiles' and 'total'. MFA secrets are redacted. Profiles carry no lockout state: deny, deny_web, totp_locked and mfa_status are permanent settings, and whether a user is locked out right now cannot be read through this server.",
+    "description": "Users defined on the Access Server (the special __DEFAULT__ user is excluded; use get_default_user for it). Each profile carries admin, autologin, deny, auth_method, group, mfa_status and other properties with inheritance metadata. Filters: name_contains (substring), group (exact group name), admins_only, autologin_only, usernames (exact list; unknown names are silently absent). Returns 'profiles' and 'total'. MFA secrets are redacted. Profiles carry no lockout state: deny, deny_web, totp_locked and mfa_status are permanent settings, and whether a user is locked out right now cannot be read through this server. Access lists are not part of this answer: use list_access_lists.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,

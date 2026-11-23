@@ -563,7 +563,13 @@ async def run_write[Item](
         warnings.append(WARN_OWN_MFA.format(name=clean(own.name)))
 
     # 6. Show the change and ask.
-    text = render(client.config.url, op.action, [p.preview for p in plans], warnings)
+    text = render(
+        client.config.url,
+        op.action,
+        [p.preview for p in plans],
+        warnings,
+        head_changes=getattr(op, "head_changes", None),
+    )
     befores = [row.before for row in rows]
     decision = await ask(ctx, mode, text, binding(op.tool, args, befores))
     if isinstance(decision, mcp_types.InputRequiredResult):

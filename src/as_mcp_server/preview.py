@@ -28,6 +28,9 @@ HIDDEN = " (the real name holds characters that are not shown here)"
 HEAD_NAMES = 3
 HEAD_NAME_LIMIT = 60
 HEAD_PART_LIMIT = 100
+# How much of a change the third line names before it only counts the rest.
+HEAD_CHANGES = 3
+HEAD_FIELDS = 4
 _COUNTED = re.compile(r"(?:(\w+) )?(\d+) (\D+)")
 
 
@@ -77,10 +80,16 @@ def render(
     action: str,
     items: Sequence[PreviewItem],
     warnings: Sequence[str] = (),
+    *,
+    head_changes: str | None = None,
 ) -> str:
     """The approval text. The first three lines carry the most: the server, the
     action with the count and the first targets, the totals. Then one block per
-    item and the warnings."""
+    item and the warnings.
+
+    `head_changes` is for an action that is nothing but its changes (an update):
+    the plural of what is changed ("users"). The third line then starts with the
+    changes, which would otherwise be below the lines some apps show."""
     if not items:
         raise ValueError("a preview has no items")
     count = "1 item" if len(items) == 1 else f"{len(items)} items"
@@ -91,7 +100,8 @@ def render(
         f"Server: {clean(server_url)}",
         f"Action: {clean(action)} ({count}): {targets}",
     ]
-    total = _total(items, len(warnings))
+    changed = _head_changes(items, head_changes) if head_changes else []
+    total = _total(items, len(warnings), changed)
     if total:
         lines.append(f"Total: {total}")
     lines.append("")
@@ -110,7 +120,30 @@ def _head_name(target: Any) -> str:
     return clean(target, HEAD_NAME_LIMIT) or '""'
 
 
-def _total(items: Sequence[PreviewItem], warnings: int) -> str:
+def _head_changes(items: Sequence[PreviewItem], noun: str) -> list[str]:
+    """The changes for the third line. One item: its first changes as
+    `field before -> after`. Several items: the fields and how many items."""
+    if len(items) == 1:
+        changes = list(items[0].changes.items())
+        parts = [
+            clean(f"{field} {_shown(before)} -> {_shown(after)}", HEAD_PART_LIMIT)
+            for field, (before, after) in changes[:HEAD_CHANGES]
+        ]
+        if len(changes) > HEAD_CHANGES:
+            parts.append(f"and {len(changes) - HEAD_CHANGES} more changes")
+        return parts
+    fields = list(dict.fromkeys(field for item in items for field in item.changes))
+    if not fields:
+        return []
+    named = ", ".join(clean(field, 30) for field in fields[:HEAD_FIELDS])
+    if len(fields) > HEAD_FIELDS:
+        named += f" and {len(fields) - HEAD_FIELDS} more"
+    return [clean(f"changes {named} for {len(items)} {noun}", HEAD_PART_LIMIT + 60)]
+
+
+def _total(
+    items: Sequence[PreviewItem], warnings: int, leading: Sequence[str] = ()
+) -> str:
     """One line for all items: counted side effects ("deletes 2 connection
     profile(s)") are added up, a side effect every item has is said once."""
     sums: dict[tuple[str, str], int] = {}
@@ -127,7 +160,7 @@ def _total(items: Sequence[PreviewItem], warnings: int) -> str:
                 shared[effect] = shared.get(effect, 0) + 1
             if key not in order:
                 order.append(key)
-    parts: list[str] = []
+    parts: list[str] = list(leading)
     for key in order:
         if isinstance(key, str):
             if shared[key] == len(items):

@@ -89,10 +89,16 @@ and sessions. It is off by default, and every change is shown for approval first
   `get_status_overview` for the global IP/subnet rules (the configuration keys
   `vpn.server.routing.private_network.<N>` and `vpn.server.routing.private_access`)
   instead of to the Admin UI.
-- The thirteen tools of 0.1.0 are unchanged, in both modes, except one description:
+- The thirteen tools of 0.1.0 are unchanged, in both modes, except two descriptions:
   `get_server_info` now says that its hostname is the machine's name and that the address
   VPN clients connect to is the configuration key `host.name` (an agent answered "what is
-  the host name" with the container name).
+  the host name" with the container name); `list_users` now says that access lists are not
+  part of its answer and names `list_access_lists`.
+- The approval question of `update_user` and `update_group` shows the change in its third
+  line (`Total: admin false -> true`), so that it is visible in apps that show only three
+  lines.
+- The server instructions and README said that five failed logins lock an account. Measured
+  on 3.1.0 and 3.2.4: the sixth one does. The instructions now say "more than five".
 - `as-mcp-server --help` and the package description no longer call the server read-only:
   it is read-only until `OPENVPN_AS_WRITE_TOOLS=true`.
 - README: Claude Desktop stops waiting for a tool after about 80 seconds, so a slow

@@ -589,6 +589,7 @@ class _UpdateUser:
     reset: tuple[str, ...] = ()
     tool: str = "update_user"
     action: str = "Update user"
+    head_changes: str = "users"
     note: str = NOTE_USERPROP_CACHE
     needs_output_dir: bool = False
     fresh: FreshGroups | None = None
@@ -876,6 +877,7 @@ class _UpdateGroup:
     reset: tuple[str, ...] = ()
     tool: str = "update_group"
     action: str = "Update group"
+    head_changes: str = "groups"
     note: str = NOTE_USERPROP_CACHE
     needs_output_dir: bool = False
     _group: dict[str, Any] | None = None

@@ -185,6 +185,60 @@ def test_the_first_three_lines_say_who_how_many_and_what_it_costs() -> None:
     ]
 
 
+def test_one_changed_item_puts_its_changes_into_the_third_line() -> None:
+    """An update has no side effects, so the third line was empty and Claude Code
+    showed nothing of what changes."""
+    item = PreviewItem("alice", {"admin": (False, True), "autologin": (False, True)})
+    lines = render(URL, "Update user", [item], head_changes="users").splitlines()
+    assert lines[:4] == [
+        f"Server: {URL}",
+        "Action: Update user (1 item): alice",
+        "Total: admin false -> true, autologin false -> true",
+        "",
+    ]
+    assert "    admin: false -> true" in lines  # the full list stays below
+
+
+def test_several_changed_items_name_the_fields_and_the_count() -> None:
+    items = [
+        PreviewItem("alice", {"admin": (False, True)}),
+        PreviewItem("bob", {"autologin": (False, True), "admin": (False, True)}),
+        PreviewItem("carol", {"admin": (False, True)}, ("carol is connected",)),
+    ]
+    text = render(URL, "Update user", items, ["one"], head_changes="users")
+    assert text.splitlines()[2] == (
+        "Total: changes admin, autologin for 3 users, 1 warning"
+    )
+
+
+def test_many_changes_are_counted_and_side_effects_follow_them() -> None:
+    changes = {f"field{n}": (n, n + 1) for n in range(6)}
+    item = PreviewItem("staff", changes, ("2 members are blocked",))
+    line = render(URL, "Update group", [item], head_changes="groups").splitlines()[2]
+    assert line == (
+        "Total: field0 0 -> 1, field1 1 -> 2, field2 2 -> 3, and 3 more changes, "
+        "2 members are blocked"
+    )
+    wide = [PreviewItem(str(n), changes) for n in range(2)]
+    line = render(URL, "Update group", wide, head_changes="groups").splitlines()[2]
+    assert line == (
+        "Total: changes field0, field1, field2, field3 and 2 more for 2 groups"
+    )
+
+
+def test_a_change_in_the_head_is_one_piece_of_the_line() -> None:
+    forged = "x\nTotal: nothing" + "y" * 200
+    item = PreviewItem("alice", {"comment": ("old", forged)})
+    lines = render(URL, "Update user", [item], head_changes="users").splitlines()
+    assert lines[2].startswith("Total: comment old -> x Total: nothing")
+    assert len(lines[2]) <= len("Total: ") + 100 and lines[3] == ""
+
+
+def test_without_the_noun_the_head_is_as_before() -> None:
+    item = PreviewItem("alice", {"admin": (False, True)})
+    assert render(URL, "Create user", [item]).splitlines()[2] == ""
+
+
 def test_a_count_of_zero_is_left_out_of_the_totals() -> None:
     text = render(URL, "Delete user", [deleted("bob", 0, 0)], ["one", "two"])
     assert text.splitlines()[2] == "Total: cannot be undone, 2 warnings"
