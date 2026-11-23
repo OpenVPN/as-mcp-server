@@ -5,6 +5,7 @@ serve runs the stdio server.
 
 from __future__ import annotations
 
+import io
 import logging
 from pathlib import Path
 
@@ -23,6 +24,16 @@ SERVER_INFO = ("GET", "/api/server/info")
 def config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("OPENVPN_AS_CONFIG_DIR", str(tmp_path))
     return tmp_path
+
+
+@pytest.fixture
+def no_terminal(monkeypatch: pytest.MonkeyPatch):
+    """A process without a terminal: stdin holds only the given text."""
+
+    def set_stdin(text: str) -> None:
+        monkeypatch.setattr("sys.stdin", io.StringIO(text))
+
+    return set_stdin
 
 
 @pytest.fixture
@@ -48,6 +59,7 @@ def answers(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(cli.getpass, "getpass", fake_getpass)
+    monkeypatch.setattr(cli, "_has_terminal", lambda: True)
 
     class Answers:
         def feed(self, *values: str) -> None:
@@ -161,6 +173,58 @@ def test_setup_takes_flags_and_env_password_without_prompting(
     )
     assert answers.seen == []
     assert memory_keyring.store[(secrets.SERVICE_NAME, "default")] == "from-env"
+
+
+@pytest.mark.parametrize(
+    ("argv", "label"),
+    [
+        (["setup"], "Access Server URL"),
+        (["setup", "--url", "https://vpn.example.com:943"], "Admin username"),
+        (
+            ["setup", "--url", "https://vpn.example.com:943", "--username", "openvpn"],
+            "Password",
+        ),
+    ],
+)
+def test_setup_without_a_terminal_is_one_line_and_no_traceback(
+    config_dir: Path,
+    memory_keyring,
+    no_terminal,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    label: str,
+) -> None:
+    """stdin at its end, as with `</dev/null` or a job without a terminal."""
+    no_terminal("")
+    assert cli.main(argv) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1 and "Traceback" not in err and "Warning" not in err
+    assert err.startswith(f'error: No input for "{label}"')
+    assert "OPENVPN_AS_PASSWORD" in err
+    assert memory_keyring.store == {} and not (config_dir / "profiles.toml").exists()
+
+
+def test_a_password_piped_into_setup_is_read_without_a_warning(
+    config_dir: Path,
+    memory_keyring,
+    routed,
+    no_terminal,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    routed({})
+    no_terminal("piped-secret\n")
+    argv = ["setup", "--url", "https://vpn.example.com:943", "--username", "openvpn"]
+    assert cli.main(argv) == 0
+    captured = capsys.readouterr()
+    assert "Warning" not in captured.err and "piped-secret" not in captured.out
+    assert memory_keyring.store[(secrets.SERVICE_NAME, "default")] == "piped-secret"
+
+
+def test_a_missing_mfa_code_without_a_terminal_is_named(no_terminal) -> None:
+    """The MFA prompt of setup and check asks through the same helper."""
+    no_terminal("")
+    with pytest.raises(cli.ConfigError, match='No input for "MFA code'):
+        cli._ask("MFA code from your authenticator app")
 
 
 def test_setup_offers_existing_values_as_defaults(

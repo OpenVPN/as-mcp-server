@@ -115,6 +115,10 @@ and sessions. It is off by default, and every change is shown for approval first
 - `OPENVPN_AS_LOG_LEVEL` now sets the level of as-mcp-server's own lines only. Libraries
   log from WARNING up, so `DEBUG` no longer prints the HTTP library's lines with response
   headers, and `INFO` no longer prints full request URLs.
+- `as-mcp-server setup` and `check` without a terminal (for example `setup --url ... --username
+  ... </dev/null`) ended in a Python traceback when they had to ask for something. They now
+  print one line that names the missing answer and exit with code 1. A password piped into
+  `setup` is read without a warning.
 - A `~` at the start of `OPENVPN_AS_OUTPUT_DIR`, `OPENVPN_AS_CONFIG_DIR` or
   `OPENVPN_AS_CA_CERT` is the home folder. It was taken as a folder named `~` before.
 - An approval answered more than 10 minutes after the question (MCP protocol 2026-07-28)

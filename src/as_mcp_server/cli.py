@@ -52,6 +52,13 @@ https://github.com/OpenVPN/as-mcp-server#agent-setup
 """
 
 
+MSG_NO_INPUT = (
+    'No input for "{label}": there is no terminal to type it into. Run the command '
+    "in a terminal, or give --url and --username to setup and put the password into "
+    "OPENVPN_AS_PASSWORD."
+)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="as-mcp-server",
@@ -151,7 +158,7 @@ def _setup(args: argparse.Namespace, settings: Settings) -> int:
     if settings.password is not None:
         password = settings.password.get_secret_value()
     else:
-        password = getpass.getpass("Password (input hidden): ")
+        password = _ask("Password", " (input hidden)", hidden=True)
     if not password:
         raise ConfigError("A password is required.")
     config = resolve(
@@ -250,13 +257,13 @@ async def _verify(config: ResolvedConfig) -> dict[str, Any]:
         except MfaRequiredError:
             pending = client.challenge
             if pending is None or pending.totp:
-                label, ask = "MFA code from your authenticator app", input
+                label, hidden = "MFA code from your authenticator app", False
             elif pending.prompt is None:
-                label, ask = "Second factor", getpass.getpass
+                label, hidden = "Second factor", True
             else:
                 label = " ".join(pending.prompt.split()).rstrip(":")
-                ask = input if pending.echo else getpass.getpass
-            await client.login(ask(f"{label}: ").strip())
+                hidden = not pending.echo
+            await client.login(_ask(label, hidden=hidden).strip())
         info = await client.get("/server/info")
         return info if isinstance(info, dict) else {}
     finally:
@@ -268,9 +275,24 @@ def _new_client(config: ResolvedConfig) -> AccessServerClient:
     return AccessServerClient(config)
 
 
+def _has_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
+def _ask(label: str, suffix: str = "", *, hidden: bool = False) -> str:
+    """One answer from the person at the terminal; `hidden` answers are not shown
+    while typed. Without a terminal the answer is a line of stdin, and input that
+    ends at once is one clear line instead of a traceback."""
+    ask = getpass.getpass if hidden and _has_terminal() else input
+    try:
+        return ask(f"{label}{suffix}: ")
+    except EOFError:
+        raise ConfigError(MSG_NO_INPUT.format(label=label)) from None
+
+
 def _prompt(label: str, default: str | None) -> str:
     suffix = f" [{default}]" if default else ""
-    value = input(f"{label}{suffix}: ").strip() or (default or "")
+    value = _ask(label, suffix).strip() or (default or "")
     if not value:
         raise ConfigError(f"{label} is required.")
     return value
