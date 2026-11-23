@@ -59,7 +59,7 @@ a Python that came out later: the install then needs a C and Rust compiler, or f
 | Claude Code | `claude mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.claude.json` (add `--scope user` to use it in every project) |
 | Codex CLI | `codex mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.codex/config.toml` |
 | Gemini CLI | `gemini mcp add -s user openvpn-as uvx -- --python 3.13 as-mcp-server` (the `--` comes after `uvx`) | `~/.gemini/settings.json` |
-| OpenCode | `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `~/.config/opencode/opencode.json` (or `.jsonc`) |
+| OpenCode | `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-server` | `opencode.json` in the folder where you ran the command (that folder only); `~/.config/opencode/opencode.json` (or `.jsonc`) for every folder |
 | VS Code | `code --add-mcp '{"name":"openvpn-as","command":"uvx","args":["--python","3.13","as-mcp-server"]}'` | the user profile's `mcp.json` ("MCP: Open User Configuration"), or `.vscode/mcp.json` in a project |
 | Cursor | - | `~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project |
 | Claude Desktop | - | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` (Settings, Developer, Edit Config) |
@@ -113,8 +113,11 @@ Both versions have the `opencode mcp add openvpn-as -- uvx --python 3.13 as-mcp-
 the first form.
 OpenCode reads two files: `opencode.json` in a project folder, which applies only when
 OpenCode is started from that folder, and `~/.config/opencode/opencode.json`, which applies
-everywhere. If the server is missing in another folder, the entry is in a project file: move
-it to the file in `~/.config/opencode`.
+everywhere. With OpenCode 2.3.2 the command above wrote the project file. If the server is
+missing in another folder, move the entry to the file in `~/.config/opencode`. The project
+file is created readable by other users of the machine and is easy to commit by accident, so
+do not pass the password with `--env` there: run `setup` once, which keeps it in the system
+keyring.
 
 ### Alternative: environment variables (headless Linux, CI, or by preference)
 
