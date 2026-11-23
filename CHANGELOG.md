@@ -94,6 +94,8 @@ and sessions. It is off by default, and every change is shown for approval first
   VPN clients connect to is the configuration key `host.name` (an agent answered "what is
   the host name" with the container name); `list_users` now says that access lists are not
   part of its answer and names `list_access_lists`.
+- The yes/no field of the approval question has the default "no". An app that puts its
+  selector on the default (Codex put it on "True", so Enter approved) now starts on "no".
 - README: `opencode mcp add` writes `opencode.json` in the current folder, not the file in
   `~/.config/opencode`; and a warning not to put the password into that file.
 - The approval question of `update_user` and `update_group` shows the change in its third

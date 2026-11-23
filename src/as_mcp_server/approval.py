@@ -20,6 +20,7 @@ import mcp_types
 from fastmcp import Context
 from mcp.shared.exceptions import MCPError
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import BaseModel, ConfigDict
 
 from as_mcp_server.settings import Approval
 
@@ -27,9 +28,28 @@ REQUEST_KEY = "approve"
 FIELD = "approve"
 SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {FIELD: {"type": "boolean", "title": "Apply this change?"}},
+    "properties": {
+        FIELD: {"type": "boolean", "title": "Apply this change?", "default": False}
+    },
     "required": [FIELD],
 }
+
+
+def _as_bool_gave_it(schema: dict[str, Any]) -> None:
+    # Nothing but type, properties and required at the top: strict apps (Codex)
+    # refuse top-level fields they do not know.
+    schema.pop("title", None)
+    schema.pop("description", None)
+    schema["required"] = ["value"]
+
+
+# The form of the older protocol: what `bool` gives, plus the default. An app that
+# puts its selector on the default starts on "no" (Codex started on True).
+class _Answer(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_as_bool_gave_it)
+    value: bool = False
+
+
 # Prompts that were shown and not answered yet. In memory on purpose: a prompt from
 # before a restart is not an approval. Bounded, so unanswered prompts cannot grow it.
 MAX_PENDING = 1000
@@ -75,11 +95,11 @@ async def ask(
     if not _can_show_a_form(ctx):
         return Decision.NO_ELICITATION
     try:
-        result = await ctx.elicit(text, response_type=bool)
+        result = await ctx.elicit(text, response_type=_Answer)
     except MCPError:
         # The app announced elicitation and then refused the request.
         return Decision.NO_ELICITATION
-    if result.action == "accept" and result.data is True:
+    if result.action == "accept" and result.data.value is True:
         return Decision.APPROVED
     return Decision.CANCELLED
 

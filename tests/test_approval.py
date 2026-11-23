@@ -63,6 +63,31 @@ async def test_accept_with_no_decline_and_cancel_are_cancelled(
     assert result == {"decision": "CANCELLED"}
 
 
+async def test_the_form_of_the_older_protocol_starts_on_no() -> None:
+    """Codex puts its selector on the default; without one it started on True,
+    and Enter approved. The form is otherwise what `bool` gave: one field
+    `value`, no top-level title (Codex refuses unknown top-level fields)."""
+    mcp, _ = server()
+    schemas: list[dict[str, Any]] = []
+
+    async def handler(message, response_type, params, context):
+        schemas.append(params.requested_schema)
+        return mcp_types.ElicitResult(action="accept", content={"value": True})
+
+    async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
+        result = await client.call_tool("change", {})
+    assert schemas == [
+        {
+            "type": "object",
+            "properties": {
+                "value": {"type": "boolean", "title": "Value", "default": False}
+            },
+            "required": ["value"],
+        }
+    ]
+    assert result.structured_content == {"decision": "APPROVED"}
+
+
 @pytest.mark.parametrize("mode", MODES)
 async def test_a_client_without_elicitation_gets_no_elicitation(mode: str) -> None:
     mcp, world = server()
@@ -214,7 +239,13 @@ async def test_the_first_round_asks_with_the_text_and_a_yes_no_form() -> None:
     assert request.params.message == TEXT
     assert request.params.requested_schema == {
         "type": "object",
-        "properties": {"approve": {"type": "boolean", "title": "Apply this change?"}},
+        "properties": {
+            "approve": {
+                "type": "boolean",
+                "title": "Apply this change?",
+                "default": False,
+            }
+        },
         "required": ["approve"],
     }
     assert asked.request_state and len(approval._issued) == 1
