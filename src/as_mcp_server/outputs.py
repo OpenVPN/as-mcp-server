@@ -13,7 +13,14 @@ from typing import Literal
 
 from fastmcp.exceptions import ToolError
 
-Kind = Literal["profile", "download-link", "password", "support-report"]
+Kind = Literal[
+    "profile-userlocked",
+    "profile-autologin",
+    "download-link-userlocked",
+    "download-link-autologin",
+    "password",
+    "support-report",
+]
 DELIVERY_REMINDER = "Delete the file once it has been delivered."
 MAX_NAME = 64
 MAX_NAME_BYTES = 160

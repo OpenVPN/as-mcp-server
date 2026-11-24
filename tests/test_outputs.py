@@ -34,23 +34,29 @@ def mode(path: Path) -> int:
 
 
 def test_the_file_name_is_time_kind_name_and_extension(tmp_path: Path) -> None:
-    path = write_secret_file(tmp_path / "out", "profile", "alice", "ovpn", "BODY")
+    path = write_secret_file(
+        tmp_path / "out", "profile-userlocked", "alice", "ovpn", "BODY"
+    )
     assert path.parent == tmp_path / "out"
-    assert re.fullmatch(r"\d{8}-\d{6}-profile-alice\.ovpn", path.name)
+    assert re.fullmatch(r"\d{8}-\d{6}-profile-userlocked-alice\.ovpn", path.name)
     fixed = write_secret_file(tmp_path, "password", "alice", "txt", "x", now=NOW)
     assert fixed.name == "20261113-213005-password-alice.txt"
 
 
 def test_the_content_is_written_exactly_also_line_endings(tmp_path: Path) -> None:
     body = "client\nremote as.example 1194\r\n<key>\n密钥\n</key>\n"
-    path = write_secret_file(tmp_path, "profile", "alice", "ovpn", body, now=NOW)
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", body, now=NOW
+    )
     assert path.read_bytes() == body.encode("utf-8")
 
 
 @posix_only
 def test_file_and_new_directory_are_private_to_the_user(tmp_path: Path) -> None:
     directory = tmp_path / "deep" / "out"
-    path = write_secret_file(directory, "profile", "alice", "ovpn", "BODY", now=NOW)
+    path = write_secret_file(
+        directory, "profile-userlocked", "alice", "ovpn", "BODY", now=NOW
+    )
     assert mode(path) == 0o600
     assert mode(directory) == 0o700
 
@@ -60,7 +66,9 @@ def test_the_mode_does_not_depend_on_the_umask(tmp_path: Path) -> None:
     previous = os.umask(0)
     try:
         directory = tmp_path / "out"
-        path = write_secret_file(directory, "profile", "a", "ovpn", "BODY", now=NOW)
+        path = write_secret_file(
+            directory, "profile-userlocked", "a", "ovpn", "BODY", now=NOW
+        )
     finally:
         os.umask(previous)
     assert mode(path) == 0o600 and mode(directory) == 0o700
@@ -70,17 +78,25 @@ def test_the_mode_does_not_depend_on_the_umask(tmp_path: Path) -> None:
 def test_a_directory_the_admin_already_has_keeps_its_mode(tmp_path: Path) -> None:
     """OPENVPN_AS_OUTPUT_DIR may be a folder with other things in it."""
     tmp_path.chmod(0o755)
-    path = write_secret_file(tmp_path, "profile", "alice", "ovpn", "BODY", now=NOW)
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "BODY", now=NOW
+    )
     assert mode(tmp_path) == 0o755 and mode(path) == 0o600
 
 
 def test_a_second_file_in_the_same_second_gets_its_own_name(tmp_path: Path) -> None:
-    first = write_secret_file(tmp_path, "profile", "alice", "ovpn", "FIRST", now=NOW)
-    second = write_secret_file(tmp_path, "profile", "alice", "ovpn", "SECOND", now=NOW)
-    third = write_secret_file(tmp_path, "profile", "alice", "ovpn", "THIRD", now=NOW)
-    assert first.name == "20261113-213005-profile-alice.ovpn"
-    assert second.name == "20261113-213005-profile-alice-2.ovpn"
-    assert third.name == "20261113-213005-profile-alice-3.ovpn"
+    first = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "FIRST", now=NOW
+    )
+    second = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "SECOND", now=NOW
+    )
+    third = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "THIRD", now=NOW
+    )
+    assert first.name == "20261113-213005-profile-userlocked-alice.ovpn"
+    assert second.name == "20261113-213005-profile-userlocked-alice-2.ovpn"
+    assert third.name == "20261113-213005-profile-userlocked-alice-3.ovpn"
     assert [p.read_text() for p in (first, second, third)] == [
         "FIRST",
         "SECOND",
@@ -100,9 +116,11 @@ def test_names_that_differ_only_in_letter_case_do_not_overwrite_each_other(
 
 
 def test_an_existing_file_is_never_overwritten(tmp_path: Path) -> None:
-    taken = tmp_path / "20261113-213005-profile-alice.ovpn"
+    taken = tmp_path / "20261113-213005-profile-userlocked-alice.ovpn"
     taken.write_text("the admin's own file")
-    path = write_secret_file(tmp_path, "profile", "alice", "ovpn", "NEW", now=NOW)
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "NEW", now=NOW
+    )
     assert path != taken and taken.read_text() == "the admin's own file"
 
 
@@ -110,8 +128,10 @@ def test_an_existing_file_is_never_overwritten(tmp_path: Path) -> None:
 def test_a_link_planted_under_the_file_name_is_not_followed(tmp_path: Path) -> None:
     victim = tmp_path / "victim"
     victim.write_text("untouched")
-    (tmp_path / "20261113-213005-profile-alice.ovpn").symlink_to(victim)
-    path = write_secret_file(tmp_path, "profile", "alice", "ovpn", "SECRET", now=NOW)
+    (tmp_path / "20261113-213005-profile-userlocked-alice.ovpn").symlink_to(victim)
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", "alice", "ovpn", "SECRET", now=NOW
+    )
     assert victim.read_text() == "untouched"
     assert not path.is_symlink() and path.read_text() == "SECRET"
 
@@ -138,15 +158,21 @@ def test_a_link_planted_under_the_file_name_is_not_followed(tmp_path: Path) -> N
 def test_any_name_becomes_one_safe_path_component(
     tmp_path: Path, name: str, component: str
 ) -> None:
-    path = write_secret_file(tmp_path, "profile", name, "ovpn", "BODY", now=NOW)
-    assert path.name == f"20261113-213005-profile-{component}.ovpn"
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", name, "ovpn", "BODY", now=NOW
+    )
+    assert path.name == f"20261113-213005-profile-userlocked-{component}.ovpn"
     assert path.parent == tmp_path
     assert [p.name for p in tmp_path.iterdir()] == [path.name]
 
 
 def test_two_names_that_clean_to_the_same_text_get_two_files(tmp_path: Path) -> None:
-    one = write_secret_file(tmp_path, "profile", "a/b", "ovpn", "ONE", now=NOW)
-    two = write_secret_file(tmp_path, "profile", "a_b", "ovpn", "TWO", now=NOW)
+    one = write_secret_file(
+        tmp_path, "profile-userlocked", "a/b", "ovpn", "ONE", now=NOW
+    )
+    two = write_secret_file(
+        tmp_path, "profile-userlocked", "a_b", "ovpn", "TWO", now=NOW
+    )
     assert one != two and one.read_text() == "ONE" and two.read_text() == "TWO"
 
 
@@ -155,7 +181,7 @@ def test_an_extension_that_is_not_plain_letters_is_a_programming_error(
     tmp_path: Path, ext: str
 ) -> None:
     with pytest.raises(ValueError, match="extension"):
-        write_secret_file(tmp_path, "profile", "alice", ext, "BODY", now=NOW)
+        write_secret_file(tmp_path, "profile-userlocked", "alice", ext, "BODY", now=NOW)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -200,7 +226,9 @@ def test_a_file_in_place_of_the_directory_is_an_error_not_a_crash(
     with pytest.raises(OutputError, match="not a directory"):
         probe_output_dir(blocker)
     with pytest.raises(OutputError):
-        write_secret_file(blocker, "profile", "alice", "ovpn", "BODY", now=NOW)
+        write_secret_file(
+            blocker, "profile-userlocked", "alice", "ovpn", "BODY", now=NOW
+        )
     assert blocker.read_text() == "I am a file"
 
 
@@ -234,6 +262,8 @@ def test_a_long_name_in_a_wide_alphabet_still_fits_a_file_name(tmp_path: Path) -
     assert len(name) == 64
     component = safe_component(chr(0x4E2D) * 64)
     assert len(component.encode("utf-8")) <= 160 and component
-    path = write_secret_file(tmp_path, "profile", chr(0x4E2D) * 64, "ovpn", "x")
+    path = write_secret_file(
+        tmp_path, "profile-userlocked", chr(0x4E2D) * 64, "ovpn", "x"
+    )
     assert len(path.name.encode("utf-8")) < 255 and path.read_text() == "x"
     assert safe_component(name) == "_" * 64

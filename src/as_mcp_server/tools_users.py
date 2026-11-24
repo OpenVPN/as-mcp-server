@@ -151,8 +151,6 @@ class NewUser(BaseModel):
                 "Name of the new user, 1 to 128 characters, case-sensitive. It "
                 "must not be the name of an existing user or group."
             ),
-            min_length=1,
-            max_length=MAX_NAME,
         ),
     ]
     group: Annotated[
@@ -1347,8 +1345,6 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
                     "Name of the new group, 1 to 128 characters, case-sensitive. "
                     "It must not be the name of an existing user or group."
                 ),
-                min_length=1,
-                max_length=MAX_NAME,
             ),
         ],
         admin: Admin = None,

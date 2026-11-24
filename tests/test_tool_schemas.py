@@ -112,3 +112,14 @@ async def test_the_profile_write_tools_state_their_bounds_in_the_schema() -> Non
     assert set(delete["properties"]) == {"serials", "username"}
     for schema in all_schemas.values():
         assert "ctx" not in schema.get("properties", {})
+
+
+async def test_the_download_link_tool_names_the_access_server_term() -> None:
+    mcp = build(
+        Settings(url="https://as.example:943", user="u", password="p", write_tools=True)
+    )
+    async with Client(mcp) as client:
+        listed = await client.list_tools()
+    tools = {tool.name: tool.description or "" for tool in listed}
+    link = tools["create_profile_download_link"]
+    assert "called Token URL in Access Server" in link

@@ -215,7 +215,7 @@ async def test_a_created_profile_goes_to_a_file_and_never_into_the_result(
     assert item["after"] == {"profiles": sorted(["1810972200425098125", new_serial])}
     path = Path(item["path"])
     assert path.parent == server.out and path.suffix == ".ovpn"
-    assert "profile-alice" in path.name
+    assert "-profile-userlocked-alice" in path.name
     assert path.read_text("utf-8") == PROFILE_BODY.replace(
         "1810972200425098125", new_serial
     )
@@ -289,6 +289,9 @@ async def test_an_autologin_profile_is_refused_in_auto_mode_and_allowed_with_a_p
     assert prompt.sent(CREATE) == [{"username": "alice", "profile_type": "autologin"}]
     assert "Action: Create an autologin connection profile" in seen[0]
     assert "connects without a password" in seen[0]
+    assert "-profile-autologin-alice" in Path(result["items"][0]["path"]).name
+    linked = await prompt.call("create_profile_download_link", args)
+    assert "-download-link-autologin-alice" in Path(linked["items"][0]["path"]).name
 
 
 async def test_an_autologin_profile_is_refused_in_auto_mode_also_for_a_user_with_autologin_on(  # noqa: E501
@@ -493,7 +496,7 @@ async def test_a_download_link_goes_to_a_file_with_its_expiry(
     assert item["reminder"] == DELIVERY_REMINDER
     assert item["after"] == {"valid_until": "2026-11-13T13:00:00+00:00", "usages": 2}
     path = Path(item["path"])
-    assert path.suffix == ".txt" and "download-link-alice" in path.name
+    assert path.suffix == ".txt" and "-download-link-userlocked-alice" in path.name
     assert path.read_text("utf-8") == (
         f"{LINK}\nvalid until 2026-11-13T13:00:00+00:00, 2 use(s)\n"
     )

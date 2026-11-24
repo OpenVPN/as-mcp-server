@@ -197,7 +197,7 @@ Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers thirteen
 | Tool | What it does | Parameters |
 | --- | --- | --- |
 | `create_connection_profile` | New profile per user, saved to a local file | `usernames`, `profile_type`, `tls_crypt_v2`, `comment` |
-| `create_profile_download_link` | Download link per user (1 to 5 uses), saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
+| `create_profile_download_link` | Download link per user (called Token URL in Access Server; 1 to 5 uses), saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
 | `delete_connection_profiles` | Delete profiles by serial, or every profile of one user | `serials` or `username` |
 | `block_user` | Set `deny`, disconnect the user's sessions, check that none is left | `usernames` |
 | `disconnect_vpn_sessions` | Disconnect every session of users, or single sessions; does not block | `usernames` or `sessions`, `reason` |
@@ -312,6 +312,9 @@ next), `failed`, `refused_changed` (the state changed since you approved), `unkn
 **Secrets go to files, not to the model.** Profiles, download links, generated passwords and
 the support report are saved in `OPENVPN_AS_OUTPUT_DIR` (default `<config dir>/output`,
 created for your user only; files are readable by you only) and the tool returns the path.
+A profile file is named `<date>-<time>-profile-userlocked-<user>.ovpn` or
+`<date>-<time>-profile-autologin-<user>.ovpn`, and a download link file carries the same
+two words, so the name tells the kind of profile.
 A `~` at the start of `OPENVPN_AS_OUTPUT_DIR` is your home folder. Give a full path: a relative
 one is taken from the working directory of the server process, which your AI app chooses. A
 folder that exists already keeps its permissions; only the files are made private.

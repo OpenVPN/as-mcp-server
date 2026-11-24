@@ -556,12 +556,22 @@ async def test_a_bad_new_user_refuses_the_whole_call(
 
 
 @pytest.mark.parametrize("name", ["", "x" * 129])
-async def test_the_length_of_a_new_name_is_checked_by_the_schema(
+async def test_a_new_user_name_of_a_wrong_length_is_refused_in_our_own_words(
     tmp_path: Path, name: str
 ) -> None:
     server = FakeServer(tmp_path)
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="Refused: a user name has 1 to 128 char"):
         await server.call("create_user", {"users": [{"username": name}]})
+    assert server.written() == []
+
+
+@pytest.mark.parametrize("name", ["", "x" * 129])
+async def test_a_new_group_name_of_a_wrong_length_is_refused_in_our_own_words(
+    tmp_path: Path, name: str
+) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError, match="Refused: a group name has 1 to 128 char"):
+        await server.call("create_group", {"name": name})
     assert server.written() == []
 
 

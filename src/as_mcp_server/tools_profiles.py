@@ -19,6 +19,7 @@ from pydantic import Field
 from as_mcp_server.client import AccessServerClient, NotFoundError
 from as_mcp_server.outputs import (
     DELIVERY_REMINDER,
+    Kind,
     OutputError,
     write_secret_file,
 )
@@ -42,6 +43,14 @@ from as_mcp_server.writes import (
 ProfileType = Literal["userlogin", "autologin"]
 # Per profile type: the most uses and the longest lifetime (seconds) of a link.
 LINK_LIMITS = {"userlogin": (5, 604800), "autologin": (5, 86400)}
+PROFILE_FILES: dict[str, Kind] = {
+    "userlogin": "profile-userlocked",
+    "autologin": "profile-autologin",
+}
+LINK_FILES: dict[str, Kind] = {
+    "userlogin": "download-link-userlocked",
+    "autologin": "download-link-autologin",
+}
 PAGE_SIZE = 500
 MAX_COMMENT = 200
 TOOLS = (
@@ -222,7 +231,9 @@ class _CreateProfile(_UserOp):
                 known,
             )
         try:
-            path = write_secret_file(self.directory, "profile", item, "ovpn", text)
+            path = write_secret_file(
+                self.directory, PROFILE_FILES[self.profile_type], item, "ovpn", text
+            )
         except OutputError as exc:
             raise Partial(
                 done,
@@ -331,7 +342,7 @@ class _CreateLink(_UserOp):
         content = f"{uri}\nvalid until {valid_until}, {self.usages} use(s)\n"
         try:
             path = write_secret_file(
-                self.directory, "download-link", item, "txt", content
+                self.directory, LINK_FILES[self.profile_type], item, "txt", content
             )
         except OutputError as exc:
             raise Partial(
@@ -573,7 +584,8 @@ def register_profile_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         name="create_profile_download_link",
         description=(
             "Create a link through which a user downloads a new connection profile "
-            "into their OpenVPN client, one link for each listed user. The link is "
+            "into their OpenVPN client (called Token URL in Access Server), one "
+            "link for each listed user. The link is "
             "saved to a file on the administrator's computer and only the path is "
             "returned; the link itself is never returned. A link cannot be revoked "
             "or listed afterwards: it works until it expires or its uses run out, "

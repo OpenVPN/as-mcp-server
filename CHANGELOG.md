@@ -28,7 +28,9 @@ and sessions. It is off by default, and every change is shown for approval first
   group or switched to another authentication method, also not through its group.
 - Connection profiles: `create_connection_profile`, `create_profile_download_link` and
   `delete_connection_profiles`. A profile or a link is saved to a file in the output folder
-  (readable by its owner only) and the tool returns the path, never the content. A name that
+  (readable by its owner only) and the tool returns the path, never the content. The file
+  name carries the kind of profile, in the words of the Admin UI (`profile-userlocked-` or
+  `profile-autologin-`). A download link is what Access Server calls a Token URL. A name that
   is not an existing user is refused (Access Server itself would issue a profile to a group
   name or an unknown name). Download links are limited to 7 days and 5 uses (`autologin`: 24
   hours and 5 uses).
