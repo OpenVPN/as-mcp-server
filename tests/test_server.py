@@ -372,7 +372,8 @@ def test_instructions_send_what_can_x_reach_through_rulesets_and_access_lists() 
         "both. Global IP/subnet rules\n"
         "are server settings, not access lists: call "
         "get_status_overview(config_names=[...]) with\n"
-        "vpn.server.routing.private_network.0 to .9 and "
+        "vpn.server.routing.private_network.0 to .9, "
+        "vpn.server.routing.routed_subnets.0 to .9 and\n"
         "vpn.server.routing.private_access, and report\n"
         "them too; a number that is not set is left out of the answer.\n"
     )

@@ -186,7 +186,8 @@ as `30m`, `24h`, `7d`, `15d 20m`. "What can user X reach": rulesets for the user
 the user's groups, and for `__DEFAULT__`, then `list_access_rules` with the collected ids,
 then `list_access_lists` for the IPv4 subnet rules. Global IP/subnet rules are server
 settings, not access lists: `get_status_overview` reads them when you name the keys
-`vpn.server.routing.private_network.0`, `.1`, ... and `vpn.server.routing.private_access`.
+`vpn.server.routing.private_network.0`, `.1`, ..., `vpn.server.routing.routed_subnets.0`,
+`.1`, ... and `vpn.server.routing.private_access`.
 IPv6 access lists are not returned by the API; check them in the Admin UI. Profile serials
 are strings of digits (they are too large for a JSON number).
 

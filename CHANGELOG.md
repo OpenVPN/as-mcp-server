@@ -89,7 +89,8 @@ and sessions. It is off by default, and every change is shown for approval first
   next sign-in will need an MFA code.
 - The server instructions for "what can user X reach" now send the agent to
   `get_status_overview` for the global IP/subnet rules (the configuration keys
-  `vpn.server.routing.private_network.<N>` and `vpn.server.routing.private_access`)
+  `vpn.server.routing.private_network.<N>`, `vpn.server.routing.routed_subnets.<N>` and
+  `vpn.server.routing.private_access`)
   instead of to the Admin UI.
 - The thirteen tools of 0.1.0 are unchanged, in both modes, except two descriptions:
   `get_server_info` now says that its hostname is the machine's name and that the address
