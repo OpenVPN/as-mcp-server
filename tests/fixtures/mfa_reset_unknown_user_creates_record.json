@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "note": "3.2.4 (same on 3.1.0): the same call for a name with no user record answers 200 and creates a user record of that name (captured 2026-11-27)",
+  "body": {
+    "totp_secret": "JBSWY3DPEHPK3PXP"
+  }
+}

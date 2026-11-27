@@ -58,6 +58,8 @@ on purpose: tests assert that the server redacts them.
 | `login_radius_bad_password_403.json` | 403 | 3.2.2: wrong first-factor password for a RADIUS-bound admin; the RADIUS Reply-Message is passed through as `reason` |
 | `login_saml_required_401.json` | 401 | 3.2.2 with `auth.module.type=saml`: password login of an account without a per-user auth type; no `challenge_context` (captured 2026-09-21) |
 | `mfa_enroll_ok.json` | 200 | enrollment with the intermediate 409 token |
+| `mfa_reset_ok.json` | 200 | 3.2.4 (same on 3.1.0): POST /userprop/mfa/generate-secret {username, reset_secret: true, locked: false} for an enrolled user; afterwards totp_locked is false and mfa_status pending (captured 2026-11-27) |
+| `mfa_reset_unknown_user_creates_record.json` | 200 | 3.2.4 (same on 3.1.0): the same call for a name with no user record answers 200 and creates a user record of that name (captured 2026-11-27) |
 | `mfaauth_bad_code.json` | 403 | 3.2.2: wrong TOTP code |
 | `mfaauth_bad_code_3_1_0.json` | 403 | 3.1.0: wrong TOTP code |
 | `mfaauth_bad_context.json` | 403 | 3.1.0: unknown challenge_context |
@@ -68,10 +70,14 @@ on purpose: tests assert that the server redacts them.
 | `mfaauth_radius_ok.json` | 200 | 3.2.2: RADIUS challenge answered with the correct PIN through /auth/login/mfaauth |
 | `mfaauth_replayed_code.json` | 403 | 3.2.2: same TOTP code used twice within one 30 s window |
 | `mfaauth_replayed_code_3_1_0.json` | 403 | 3.1.0: same TOTP code used twice within one 30 s window |
+| `password_change_existing_ok.json` | 200 | 3.2.4 (same on 3.1.0): POST /auth/password/change for an existing local user with a VPN session; the session stays up, the old password is refused at once (captured 2026-11-27) |
 | `password_change_ok.json` | 200 | 3.2.4: POST /auth/password/change for a local user, by an administrator (captured 2026-11-14) |
 | `profile_create_201.txt` | 201 | 3.2.4: the answer of `/profiles/create` (an .ovpn file) for a `userlogin` profile, captured 2026-11-13; the private key, the TLS-Crypt key and every certificate are replaced by `TESTKEY`, `TESTSTATICKEY`, `TESTCERT`, the host by `as.example` |
 | `profiles_list.json` | 200 | 3.2.4: all 7 connection profiles ordered by serial (alice 1, bob 4, жанна 1, one autologin); serials arrive as strings (captured 2026-11-13) |
 | `profiles_list_3_1_0.json` | 200 | the same on 3.1.0 |
+| `rules_modify_update.json` | 200 | 3.2.4 (same on 3.1.0): POST /access/rules/modify with an existing rule (its id) in add and another id in delete; added holds the id of the updated rule (captured 2026-11-27) |
+| `ruleset_update_ok.json` | 200 | 3.2.4 (same on 3.1.0): POST /access/rulesets/update {id, name, comment}; without comment it is 400 "comment: Field required" (captured 2026-11-27) |
+| `rulesets_list_two_owners.json` | 200 | 3.2.4 (same on 3.1.0): POST /access/rulesets/list {}, the rows of one rule set assigned to a user and a group: one row per owner, each with its own position (captured 2026-11-27) |
 | `server_info.json` | 200 | AS 3.2.4 (f3c295a7), captured 2026-11-13 after the stand moved from 3.2.3 |
 | `server_info_3_1_0.json` | 200 | AS 3.1.0 |
 | `server_status.json` | 200 |  |

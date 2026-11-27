@@ -248,6 +248,80 @@ an address only the server has (the AS team said the same on AS-6617 on 2026-11-
   configuration keys `vpn.server.routing.private_network.<N>` (with
   `vpn.server.routing.private_access` and `vpn.server.routing.routed_subnets.<N>`), which
   `get_status_overview(config_names=[...])` reads.
+- The first entry of the list that matches wins (measured 2026-11-24 with OpenVPN 2 and
+  2026-11-26 with OpenVPN 3). One request with `items_remove` and `items_append` changes
+  the order: the server applies the removal first, and an invalid entry fails the whole
+  request with 400 and changes nothing.
+- The ICMP type of a service item must be one of 32 names; an unknown one is a 400 that
+  lists them: `icmp-any`, `icmp-echo-reply`, `icmp-destination-unreachable`,
+  `icmp-network-unreachable`, `icmp-host-unreachable`, `icmp-protocol-unreachable`,
+  `icmp-port-unreachable`, `icmp-fragmentation-needed`, `icmp-source-route-failed`,
+  `icmp-network-unknown`, `icmp-host-unknown`, `icmp-network-prohibited`,
+  `icmp-host-prohibited`, `icmp-communication-prohibited`,
+  `icmp-host-precedence-violation`, `icmp-precedence-cutoff`, `icmp-source-quench`,
+  `icmp-redirect`, `icmp-network-redirect`, `icmp-host-redirect`, `icmp-echo-request`,
+  `icmp-router-advertisement`, `icmp-router-solicitation`, `icmp-time-exceeded`,
+  `icmp-ttl-zero-during-transit`, `icmp-ttl-zero-during-reassembly`,
+  `icmp-parameter-problem`, `icmp-ip-header-bad`, `icmp-required-option-missing`,
+  `icmp-timestamp-request`, `icmp-timestamp-reply`, `icmp-address-mask-request`.
+
+### What Access Server does for the tools of 0.3.0 (measured)
+
+Measured on 3.1.0 and 3.2.4 on 2026-11-27 with the probe network and the OpenVPN 3 client;
+the same on both versions unless a line says otherwise.
+
+**Domain rules** (rule sets). The DNS proxy of Access Server answers a name with an
+allowing rule (`nat`) with an address from `100.64.0.0/10` and forwards the traffic for it
+to the real host; the real address stays closed.
+
+- A rule applies from the next connection. A client that stays connected does not see it.
+- `route` also answers with a `100.64.0.x` address, but the host is not reachable on the
+  stand: the probe network has no route back to the VPN client subnet. Expected with a
+  routed (not NATed) path.
+- `bypass` answers with the real address and does not open it (full tunnel).
+- Match types with `mcpprobe.test`: `subdomain` and `domain_or_subdomain` match
+  `t1.mcpprobe.test` and `t2.mcpprobe.test`; `domain` matches only the exact name.
+- Order: of two rule sets of one user, the one with the lower position wins; of two rules
+  in one rule set, the one with the lower position wins.
+- `deny`: 3.2.4 answers REFUSED, 3.1.0 answers with the real address. Either way the name
+  gets no access through a rule, and an address that an access list allows stays reachable
+  (2026-11-26).
+- A rule set for all users is assigned to `__DEFAULT__` and applies to a user without own
+  rule sets, and together with them (2026-11-26).
+
+**Rule-set calls.**
+
+- `/access/rulesets/list` gives one row per owner, each with its own `position`.
+- `/access/rulesets/update` needs `id`, `name` and `comment`; without `comment` it is a 400.
+- `/access/rules/modify` takes an existing rule (with its `id`) in `add` and other ids in
+  `delete` in one call; `added` holds the id of the updated rule.
+- `/access/user-rulesets/modify` takes `add` and `delete` in one call.
+- `/access/rulesets/delete` of an assigned rule set removes its assignments too; an id that
+  does not exist is a 400 "Non-existent ruleset: N".
+
+**MFA reset.** `POST /userprop/mfa/generate-secret {"username", "reset_secret": true,
+"locked": false}` on an enrolled user answers 200 with a new `totp_secret` (never print
+it). Afterwards `totp_locked` is false and `mfa_status` is `pending`; the next login with
+the password answers 409 (set up MFA) instead of 401 (code needed). With `"locked": true`
+the same call enrols the user (`mfa_status` `enrolled`), which is how the probe made an
+enrolled user. For a user who never set up MFA (`mfa_status` `disabled`) and for a user with
+`auth_method` `ldap` it also answers 200. **For a name with no user record it answers 200 and
+creates a user record of that name**, so a tool must check that the user exists first.
+
+**Password reset.** `POST /auth/password/change {"username", "new_password"}` for an
+existing local user with a VPN session: 200 `{"detail": "Password changed successfully"}`;
+the session stays up; the old password is refused at once (403 "Login failed", which counts
+towards the lockout), the new one works.
+
+**Block a group.** With two connected members, one of them with its own `deny=false`:
+after `deny` on the group the plain member's effective `deny` is true, the other one's
+false; both sessions stay up; at the reconnect the plain member is refused and the other
+connects.
+
+**A user out of every group.** `/userprop/set [{"name", "group": null}]` for a connected
+member of a group whose access list allows T1: the record has no group, the values come
+from the server again (`implicit_default`, `configuration`); the running session still
+reaches T1; after a reconnect it does not.
 
 ## Rebuilding the fixtures (no Admin UI needed)
 

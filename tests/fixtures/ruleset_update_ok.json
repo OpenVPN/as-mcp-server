@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "note": "3.2.4 (same on 3.1.0): POST /access/rulesets/update {id, name, comment}; without comment it is 400 \"comment: Field required\" (captured 2026-11-27)",
+  "body": null
+}

@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "note": "3.2.4 (same on 3.1.0): POST /access/rulesets/list {}, the rows of one rule set assigned to a user and a group: one row per owner, each with its own position (captured 2026-11-27)",
+  "body": {
+    "rulesets": [
+      {
+        "owner": "mcpprobe-ac",
+        "owner_type": "user_connect",
+        "id": 2,
+        "name": "mcpprobe-ar1",
+        "position": 100,
+        "comment": "mcpprobe"
+      },
+      {
+        "owner": "mcpprobe-ag2",
+        "owner_type": "group",
+        "id": 2,
+        "name": "mcpprobe-ar1",
+        "position": 200,
+        "comment": "mcpprobe"
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "note": "3.2.4 (same on 3.1.0): POST /userprop/mfa/generate-secret {username, reset_secret: true, locked: false} for an enrolled user; afterwards totp_locked is false and mfa_status pending (captured 2026-11-27)",
+  "body": {
+    "totp_secret": "JBSWY3DPEHPK3PXP"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "note": "3.2.4 (same on 3.1.0): POST /access/rules/modify with an existing rule (its id) in add and another id in delete; added holds the id of the updated rule (captured 2026-11-27)",
+  "body": {
+    "added": [
+      3
+    ]
+  }
+}
