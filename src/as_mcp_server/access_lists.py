@@ -27,6 +27,41 @@ OWNER_KEY: dict[Kind, str] = {"user": "username", "group": "groupname"}
 LIST_TYPE = "access_to_ipv4"
 ALL_PORTS = (0, 65535)
 ANY_ICMP = "icmp-any"
+# The names Access Server accepts (measured on 3.1.0 and 3.2.4; others are a 400).
+ICMP_TYPES = (
+    "icmp-any",
+    "icmp-echo-reply",
+    "icmp-destination-unreachable",
+    "icmp-network-unreachable",
+    "icmp-host-unreachable",
+    "icmp-protocol-unreachable",
+    "icmp-port-unreachable",
+    "icmp-fragmentation-needed",
+    "icmp-source-route-failed",
+    "icmp-network-unknown",
+    "icmp-host-unknown",
+    "icmp-network-prohibited",
+    "icmp-host-prohibited",
+    "icmp-communication-prohibited",
+    "icmp-host-precedence-violation",
+    "icmp-precedence-cutoff",
+    "icmp-source-quench",
+    "icmp-redirect",
+    "icmp-network-redirect",
+    "icmp-host-redirect",
+    "icmp-echo-request",
+    "icmp-router-advertisement",
+    "icmp-router-solicitation",
+    "icmp-time-exceeded",
+    "icmp-ttl-zero-during-transit",
+    "icmp-ttl-zero-during-reassembly",
+    "icmp-parameter-problem",
+    "icmp-ip-header-bad",
+    "icmp-required-option-missing",
+    "icmp-timestamp-request",
+    "icmp-timestamp-reply",
+    "icmp-address-mask-request",
+)
 
 
 class Refusal(Exception):

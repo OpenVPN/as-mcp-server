@@ -17,6 +17,7 @@ from as_mcp_server.config import DEFAULT_PROFILE, INSECURE_WARNING
 from as_mcp_server.limits import ToolCallLimit
 from as_mcp_server.settings import Settings
 from as_mcp_server.tools import register_tools
+from as_mcp_server.tools_access_write import register_access_write_tools
 from as_mcp_server.tools_profiles import register_profile_tools
 from as_mcp_server.tools_restart import register_restart_tools
 from as_mcp_server.tools_sessions import register_session_tools
@@ -138,6 +139,7 @@ def register_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     register_session_tools(mcp, deps)
     register_user_tools(mcp, deps)
     register_restart_tools(mcp, deps)
+    register_access_write_tools(mcp, deps)
 
 
 def build(

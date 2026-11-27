@@ -73,6 +73,9 @@ class PreviewItem:
     target: str
     changes: dict[str, tuple[Any, Any]]
     side_effects: tuple[str, ...] = ()
+    # A list whose order matters, shown in full after the change and left out of
+    # the totals. None shows nothing; an empty tuple shows "(empty)".
+    order_after: tuple[str, ...] | None = None
 
 
 def render(
@@ -110,6 +113,14 @@ def render(
         for field, (before, after) in item.changes.items():
             lines.append(f"    {clean(field)}: {_shown(before)} -> {_shown(after)}")
         lines.extend(f"    also: {clean(effect, 300)}" for effect in item.side_effects)
+        if item.order_after is not None:
+            lines.append(
+                "    order after the change:" + ("" if item.order_after else " (empty)")
+            )
+            lines.extend(
+                f"      {number}. {clean(entry, 300)}"
+                for number, entry in enumerate(item.order_after, 1)
+            )
     if warnings:
         lines.append("")
         lines.extend(f"Warning: {clean(warning, 300)}" for warning in warnings)

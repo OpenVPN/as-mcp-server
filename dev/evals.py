@@ -204,6 +204,7 @@ WRITE_TOOLS = (
     "delete_group",
     "delete_user",
     "disconnect_vpn_sessions",
+    "modify_access_list",
     "update_group",
     "update_user",
     "warm_restart",

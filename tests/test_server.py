@@ -479,5 +479,6 @@ async def test_write_mode_adds_exactly_the_write_tools_built_so_far(
         "update_group",
         "delete_group",
         "warm_restart",
+        "modify_access_list",
     }
     assert names >= EXPECTED_TOOLS
