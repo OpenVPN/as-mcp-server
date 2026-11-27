@@ -57,6 +57,7 @@ EXPECTED_HINTS = {
     ("update_user", "remove_from_group"): ["server values", "not with group"],
     ("block_group", "names"): ["case-sensitive"],
     ("reset_user_password", "usernames"): ["case-sensitive", "local"],
+    ("reset_user_mfa", "usernames"): ["case-sensitive"],
     ("delete_group", "name"): ["case-sensitive"],
 }
 

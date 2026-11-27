@@ -209,6 +209,7 @@ WRITE_TOOLS = (
     "disconnect_vpn_sessions",
     "modify_access_list",
     "modify_access_rules",
+    "reset_user_mfa",
     "reset_user_password",
     "save_access_ruleset",
     "update_group",

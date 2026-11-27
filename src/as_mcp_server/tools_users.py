@@ -47,13 +47,17 @@ from as_mcp_server.guards import Effect, auto_limit_reason
 from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
+    AUTO_MFA,
     AUTO_PASSWORD,
     MSG_AUTO_FRESH_GROUP,
     MSG_GROUP_AND_REMOVE,
     MSG_IN_NO_GROUP,
+    MSG_MFA_NOT_ALLOWED,
+    MSG_NO_MFA_TO_RESET,
     MSG_USE_BLOCK,
     MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
+    NOTE_MFA_RESET,
     NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_RECONNECT,
@@ -113,7 +117,10 @@ TOOLS = (
     "delete_group",
     "block_group",
     "reset_user_password",
+    "reset_user_mfa",
 )
+# Sign-in methods whose MFA is not the TOTP of Access Server.
+NO_SERVER_MFA = ("saml", "pas_only")
 MAX_NAME = 128
 MAX_MEMBERS_SHOWN = 20
 # A side effect line of the preview is cut at 300 characters.
@@ -694,6 +701,72 @@ class _ResetUserPassword:
                 "Access Server shows no password for the user; the password file "
                 "was removed",
                 {"path": None, "reminder": None},
+            )
+        return state
+
+
+def _mfa_state(user: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **_state(user),
+        "mfa_status": user.get("mfa_status"),
+        "totp_locked": user.get("totp_locked"),
+    }
+
+
+@dataclass
+class _ResetUserMfa:
+    """MFA set up again at the next sign-in. Access Server answers with a new
+    secret; it is dropped unread (D4): nobody needs it, the user enrols anew."""
+
+    tool: str = "reset_user_mfa"
+    action: str = "Reset MFA"
+    note: str = NOTE_MFA_RESET
+    needs_output_dir: bool = False
+
+    def key(self, item: str) -> str:
+        return item.casefold()
+
+    def target(self, item: str) -> str:
+        return item
+
+    async def read(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        # Measured: for a name without a user record the reset creates one, so a
+        # missing user must be refused here, before any write.
+        return _mfa_state(await read_user(client, item))
+
+    def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
+        method = before["auth_method"]
+        if method in NO_SERVER_MFA:
+            raise ToolError(
+                MSG_MFA_NOT_ALLOWED.format(name=clean(item), method=clean(method))
+            )
+        if before["mfa_status"] != "enrolled":
+            raise ToolError(MSG_NO_MFA_TO_RESET.format(name=clean(item)))
+        own_account = item.casefold() == own.name.casefold()
+        return Plan(
+            PreviewItem(
+                item,
+                {"mfa_status": (before["mfa_status"], "pending")},
+                (NOTE_MFA_RESET, "no new secret is kept or shown"),
+            ),
+            auto_reason=AUTO_MFA,
+            lockout="MFA of the own account would be reset" if own_account else None,
+        )
+
+    async def apply(
+        self, client: AccessServerClient, item: str, before: dict[str, Any]
+    ) -> dict[str, Any]:
+        await client.post(
+            "/userprop/mfa/generate-secret",
+            {"username": item, "reset_secret": True, "locked": False},
+        )
+        return {}
+
+    async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        state = _mfa_state(await read_user(client, item))
+        if state["mfa_status"] == "enrolled" or state["totp_locked"] is not False:
+            raise Partial(
+                ["written"], "Access Server still shows MFA set up for the user"
             )
         return state
 
@@ -1456,9 +1529,10 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "reset_to_inherited. remove_from_group=true takes the users out of "
             "their group: they get the server values. A call with deny=true is "
             "not run at all: call block_user, then update_user for the other "
-            "fields. A new password comes from reset_user_password. This tool "
-            "cannot reset MFA enrollment or clear a failed-login lockout (deny is "
-            "not the lockout); say so instead of trying another tool." + RESULT_HELP
+            "fields. A new password comes from reset_user_password, a new MFA "
+            "set-up from reset_user_mfa. This tool cannot clear a failed-login "
+            "lockout (deny is not the lockout); say so instead of trying another "
+            "tool." + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1734,6 +1808,34 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     ) -> Any:
         op = _ResetUserPassword(output_dir())
         return await run_write(ctx, deps, op, list(usernames), {"usernames": usernames})
+
+    @mcp.tool(
+        name="reset_user_mfa",
+        description=(
+            "Reset the MFA (authenticator codes of Access Server) of existing "
+            "users who have set it up: their authenticator no longer counts and "
+            "the next sign-in asks them to set up MFA again. No new secret is "
+            "kept or shown. Refused for users who have not set up MFA, and for "
+            "users who sign in with SAML or a post-auth script only (pas_only). "
+            "The MFA of the account this server signs in with is never reset. "
+            "Refused in automatic approval mode." + RESULT_HELP
+        ),
+        annotations=WRITE,
+        tags={"write"},
+    )
+    async def reset_user_mfa(
+        ctx: Context,
+        usernames: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=MAX_NAME)]],
+            Field(
+                max_length=MAX_ITEMS,
+                description="Exact, case-sensitive usernames of existing users.",
+            ),
+        ],
+    ) -> Any:
+        return await run_write(
+            ctx, deps, _ResetUserMfa(), list(usernames), {"usernames": usernames}
+        )
 
     @mcp.tool(
         name="block_group",

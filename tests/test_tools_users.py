@@ -22,6 +22,7 @@ from as_mcp_server.outputs import DELIVERY_REMINDER
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
+    AUTO_MFA,
     AUTO_PASSWORD,
     MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
@@ -30,10 +31,13 @@ from as_mcp_server.texts import (
     MSG_GROUP_AND_REMOVE,
     MSG_IN_NO_GROUP,
     MSG_LOCKOUT,
+    MSG_MFA_NOT_ALLOWED,
+    MSG_NO_MFA_TO_RESET,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
     MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
+    NOTE_MFA_RESET,
     NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
@@ -73,6 +77,8 @@ P = "/api"
 USERS = ("POST", f"{P}/users/list")
 CREATE = ("POST", f"{P}/users/create")
 PASSWORD = ("POST", f"{P}/auth/password/change")
+MFA = ("POST", f"{P}/userprop/mfa/generate-secret")
+SECRET = "JBSWY3DPEHPK3PXP"
 SET = ("POST", f"{P}/userprop/set")
 DELETE = ("POST", f"{P}/users/delete")
 PROFILES_DELETE = ("POST", f"{P}/profiles/delete-user")
@@ -82,6 +88,7 @@ GROUP_DELETE = ("POST", f"{P}/groups/delete")
 WRITES = (
     CREATE,
     PASSWORD,
+    MFA,
     SET,
     DELETE,
     PROFILES_DELETE,
@@ -142,6 +149,7 @@ class FakeServer:
                 ("POST", f"{P}/groups/list"): self._groups_list,
                 CREATE: self._guarded(self._create),
                 PASSWORD: self._guarded(self._password),
+                MFA: self._guarded(self._mfa),
                 SET: self._guarded(self._set),
                 DELETE: self._guarded(self._delete),
                 ("POST", f"{P}/profiles/list"): self._profiles_list,
@@ -188,6 +196,8 @@ class FakeServer:
         }
         record["name"] = name
         record["password_defined"] = name in self.passwords
+        record["mfa_status"] = entry.get("mfa", "disabled")
+        record["totp_locked"] = record["mfa_status"] == "enrolled"
         if entry["group"] is not None:
             record["group"] = entry["group"]
         return record
@@ -264,6 +274,14 @@ class FakeServer:
             return captured("error_password_policy_403")
         self.passwords[name] = body["new_password"]
         return captured("password_change_ok")
+
+    def _mfa(self, body: dict) -> httpx.Response:
+        name = body["username"]
+        self.events.append(f"mfa {name}")
+        # Measured: an unknown name gets a new user record.
+        entry = self.users.setdefault(name, {"own": {}, "group": None})
+        entry["mfa"] = "enrolled" if body.get("locked") else "pending"
+        return httpx.Response(200, json={"totp_secret": SECRET})
 
     def _set(self, body: list[dict]) -> httpx.Response:
         for change in body:
@@ -2032,7 +2050,7 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
         for name, tool in tools.items()
         if tool.annotations.read_only_hint is False and name != "login"
     ]
-    assert len(flow) == 19
+    assert len(flow) == 20
     for name in flow:
         description = tools[name].description
         assert "unknown_after_timeout" in description, name
@@ -2568,3 +2586,107 @@ async def test_a_name_that_is_a_group_is_refused_for_a_password(
     with pytest.raises(ToolError) as error:
         await server.call("reset_user_password", {"usernames": ["staff"]})
     assert str(error.value) == "staff is a group, not a user."
+
+
+# --- reset_user_mfa ---------------------------------------------------------------
+
+
+async def test_the_new_secret_never_reaches_the_result_the_audit_or_the_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    server = FakeServer(tmp_path)
+    server.users["carol"]["mfa"] = "enrolled"
+    seen: list[str] = []
+    result = await server.call("reset_user_mfa", {"usernames": ["carol"]}, seen=seen)
+    item = only(result)
+    assert item["outcome"] == "done", item
+    assert item["before"]["mfa_status"] == "enrolled"
+    assert item["after"]["mfa_status"] == "pending"
+    assert item["after"]["totp_locked"] is False
+    for text in (json.dumps(result), seen[0], caplog.text):
+        assert SECRET not in text
+    assert SECRET not in (tmp_path / "audit.jsonl").read_text("utf-8")
+    lines = seen[0].splitlines()
+    assert lines[1] == "Action: Reset MFA (1 item): carol"
+    assert "    mfa_status: enrolled -> pending" in lines
+    assert f"    also: {NOTE_MFA_RESET}" in lines
+    assert result["notes"] == [NOTE_MFA_RESET]
+
+
+async def test_the_request_asks_for_a_new_secret_and_unlocks(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.users["carol"]["mfa"] = "enrolled"
+    await server.call("reset_user_mfa", {"usernames": ["carol"]})
+    assert server.sent(MFA) == [
+        {"username": "carol", "reset_secret": True, "locked": False}
+    ]
+
+
+async def test_a_user_without_mfa_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    for status in ("disabled", "pending"):
+        server.users["alice"]["mfa"] = status
+        with pytest.raises(ToolError) as error:
+            await server.call("reset_user_mfa", {"usernames": ["alice"]})
+        assert str(error.value) == MSG_NO_MFA_TO_RESET.format(name="alice")
+    assert server.written() == []
+
+
+async def test_a_saml_user_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    for method in ("saml", "pas_only"):
+        server.users["dave"] = {
+            "own": {"auth_method": method},
+            "group": None,
+            "mfa": "enrolled",
+        }
+        with pytest.raises(ToolError) as error:
+            await server.call("reset_user_mfa", {"usernames": ["dave"]})
+        assert str(error.value) == MSG_MFA_NOT_ALLOWED.format(
+            name="dave", method=method
+        )
+    assert server.written() == []
+
+
+async def test_the_own_account_is_refused_an_mfa_reset(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.users["openvpn"]["mfa"] = "enrolled"
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_mfa", {"usernames": ["openvpn"]})
+    assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert server.written() == []
+    assert server.audit()[-1]["outcome"] == "refused_lockout"
+
+
+async def test_automatic_mode_refuses_an_mfa_reset(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    server.users["carol"]["mfa"] = "enrolled"
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_mfa", {"usernames": ["carol"]}, answer="none")
+    assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_MFA)
+    assert server.written() == []
+
+
+async def test_an_unknown_user_is_refused_before_any_request(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_mfa", {"usernames": ["nobody"]})
+    assert "There is no user named nobody" in str(error.value)
+    assert server.written() == []
+    assert "nobody" not in server.users
+
+
+async def test_mfa_still_enrolled_after_the_reset_is_a_partial_result(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["carol"]["mfa"] = "enrolled"
+    server.fail[MFA] = httpx.Response(200, json={"totp_secret": SECRET})
+    result = await server.call("reset_user_mfa", {"usernames": ["carol"]})
+    item = only(result)
+    assert item["outcome"] == "partial"
+    assert item["detail"] == (
+        "Access Server still shows MFA set up for the user (done: written)"
+    )
+    assert SECRET not in json.dumps(result)

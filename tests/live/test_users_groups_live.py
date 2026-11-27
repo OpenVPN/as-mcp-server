@@ -14,15 +14,21 @@ from pathlib import Path
 import pytest
 from fastmcp.exceptions import ToolError
 
-from as_mcp_server.client import ClientHolder
+from as_mcp_server.client import (
+    ClientHolder,
+    MfaEnrollmentRequiredError,
+    MfaRequiredError,
+)
 from as_mcp_server.texts import (
     MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_IN_NO_GROUP,
     MSG_LOCKOUT,
+    MSG_NO_MFA_TO_RESET,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK_GROUP,
+    NOTE_MFA_RESET,
     NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
@@ -581,6 +587,61 @@ async def test_a_reset_password_works_at_once_and_the_old_one_does_not(scratch) 
     with pytest.raises(ToolError) as error:
         await scratch.call("reset_user_password", {"usernames": [own]})
     assert str(error.value) == MSG_LOCKOUT.format(name=own)
+
+
+async def test_an_mfa_reset_makes_the_next_sign_in_ask_for_a_new_set_up(
+    scratch,
+) -> None:
+    live, name = scratch.live, scratch.user
+    created = await scratch.call(
+        "create_user",
+        {"users": [{"username": name, "generate_password": True, "admin": True}]},
+    )
+    password_file = Path(created["items"][0]["path"])
+    password = password_file.read_text("utf-8").strip()
+    password_file.unlink()
+    await scratch.call("update_user", {"usernames": [name], "totp": True})
+    api = ClientHolder(live.settings).get()
+    # Enrol the way the measurement did; the answer holds the secret and is dropped.
+    await api.post(
+        "/userprop/mfa/generate-secret",
+        {"username": name, "reset_secret": True, "locked": True},
+    )
+    assert (await scratch.user_record(name))["mfa_status"] == "enrolled"
+
+    def as_user():
+        return ClientHolder(
+            settings_for(
+                f"{live.name}.env",
+                live.tmp_path / os.urandom(3).hex(),
+                user=name,
+                password=password,
+            )
+        ).get()
+
+    with pytest.raises(MfaRequiredError):
+        await as_user().get("/server/info")
+
+    seen: list[str] = []
+    result = await scratch.call("reset_user_mfa", {"usernames": [name]}, seen=seen)
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert item["after"]["mfa_status"] == "pending"
+    assert item["after"]["totp_locked"] is False
+    assert "    mfa_status: enrolled -> pending" in seen[0].splitlines()
+    assert result["notes"] == [NOTE_MFA_RESET]
+    assert "totp_secret" not in str(result)
+    assert "totp_secret" not in (live.tmp_path / "audit.jsonl").read_text("utf-8")
+
+    with pytest.raises(MfaEnrollmentRequiredError):
+        await as_user().get("/server/info")
+
+    with pytest.raises(ToolError) as error:
+        await scratch.call("reset_user_mfa", {"usernames": [name]})
+    assert str(error.value) == MSG_NO_MFA_TO_RESET.format(name=name)
+    with pytest.raises(ToolError):
+        await scratch.call("reset_user_mfa", {"usernames": [scratch.other]})
+    assert await scratch.user_record(scratch.other) is None
 
 
 async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -> None:
