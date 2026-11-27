@@ -47,12 +47,14 @@ from as_mcp_server.guards import Effect, auto_limit_reason
 from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_file
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
+    AUTO_PASSWORD,
     MSG_AUTO_FRESH_GROUP,
     MSG_GROUP_AND_REMOVE,
     MSG_IN_NO_GROUP,
     MSG_USE_BLOCK,
     MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
+    NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_RECONNECT,
 )
@@ -110,6 +112,7 @@ TOOLS = (
     "update_group",
     "delete_group",
     "block_group",
+    "reset_user_password",
 )
 MAX_NAME = 128
 MAX_MEMBERS_SHOWN = 20
@@ -231,6 +234,30 @@ def generate_password() -> str:
             and any(character in "-_" for character in password)
         ):
             return password
+
+
+def new_password_file(directory: Path, name: str) -> tuple[Path, str]:
+    """A generated password, written to its file first: a password nobody can read
+    back must not be set. OutputError when the file cannot be written."""
+    password = generate_password()
+    path = write_secret_file(directory, "password", name, "txt", password + "\n")
+    return path, password
+
+
+async def set_password(
+    client: AccessServerClient, name: str, password: str, path: Path
+) -> None:
+    """Set the password of the file. A refused change removes the file; a change
+    without an answer keeps it, because the password may be set."""
+    try:
+        await client.post(
+            "/auth/password/change", {"username": name, "new_password": password}
+        )
+    except RequestTimeoutError:
+        raise
+    except ToolError:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def _check_new_name(name: str, kind: str) -> None:
@@ -543,20 +570,14 @@ class _CreateUser:
         if not item.generate_password:
             return {}
         done = ["user created"]
-        password = generate_password()
         try:
-            # The file first: a password nobody can read back must not be set.
-            path = write_secret_file(
-                self.directory, "password", name, "txt", password + "\n"
-            )
+            path, password = new_password_file(self.directory, name)
         except OutputError as exc:
             raise Partial(done, f"no password was set: {exc}") from exc
         known = {"path": str(path), "reminder": DELIVERY_REMINDER}
         self._files[name] = path
         try:
-            await client.post(
-                "/auth/password/change", {"username": name, "new_password": password}
-            )
+            await set_password(client, name, password, path)
         except RequestTimeoutError as exc:
             raise Partial(
                 done,
@@ -565,7 +586,6 @@ class _CreateUser:
                 known,
             ) from exc
         except ToolError as exc:
-            path.unlink(missing_ok=True)
             raise Partial(done, f"password was not set: {exc}") from exc
         return known
 
@@ -586,6 +606,96 @@ class _CreateUser:
                 {"path": None, "reminder": None},
             )
         return {**_state(user), "password_defined": user.get("password_defined")}
+
+
+@dataclass
+class _ResetUserPassword:
+    """A new generated password for existing users, saved to a file each."""
+
+    directory: Path
+    tool: str = "reset_user_password"
+    action: str = "Reset password"
+    note: str = NOTE_PASSWORD_RESET
+    needs_output_dir: bool = True
+    _files: dict[str, Path] = field(default_factory=dict)
+    # Users whose password change got no answer: the file stays, verify says so.
+    _unanswered: set[str] = field(default_factory=set)
+
+    def key(self, item: str) -> str:
+        return item.casefold()
+
+    def target(self, item: str) -> str:
+        return item
+
+    async def read(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        user = await read_user(client, item)
+        return {**_state(user), "password_defined": user.get("password_defined")}
+
+    def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
+        method = before["auth_method"]
+        if method != "local":
+            raise ToolError(
+                MSG_PASSWORD_NEEDS_LOCAL.format(name=clean(item), method=clean(method))
+            )
+        own_account = item.casefold() == own.name.casefold()
+        return Plan(
+            PreviewItem(
+                item,
+                {
+                    "password": (
+                        "set" if before["password_defined"] else None,
+                        "new, saved to a file",
+                    )
+                },
+                (
+                    f"a generated password is saved to a file in {self.directory}",
+                    NOTE_PASSWORD_RESET,
+                ),
+            ),
+            auto_reason=AUTO_PASSWORD,
+            lockout="the password of the own account would change"
+            if own_account
+            else None,
+        )
+
+    async def apply(
+        self, client: AccessServerClient, item: str, before: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            path, password = new_password_file(self.directory, item)
+        except OutputError as exc:
+            raise ToolError(f"no password was set: {exc}") from exc
+        self._files[item] = path
+        try:
+            await set_password(client, item, password, path)
+        except RequestTimeoutError:
+            self._unanswered.add(item)
+            raise
+        except ToolError as exc:
+            raise ToolError(f"password was not set: {exc}") from exc
+        return {"path": str(path), "reminder": DELIVERY_REMINDER}
+
+    async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        user = await read_user(client, item)
+        state = {**_state(user), "password_defined": user.get("password_defined")}
+        path = self._files.get(item)
+        if item in self._unanswered and path is not None:
+            raise Partial(
+                ["password file written"],
+                "the password in the file may or may not be set",
+                {"path": str(path), "reminder": DELIVERY_REMINDER},
+            )
+        if state["password_defined"] is not True:
+            # A file with a password that does not work must not be handed out.
+            if path is not None:
+                path.unlink(missing_ok=True)
+            raise Partial(
+                ["written"],
+                "Access Server shows no password for the user; the password file "
+                "was removed",
+                {"path": None, "reminder": None},
+            )
+        return state
 
 
 @dataclass
@@ -1346,9 +1456,9 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "reset_to_inherited. remove_from_group=true takes the users out of "
             "their group: they get the server values. A call with deny=true is "
             "not run at all: call block_user, then update_user for the other "
-            "fields. This tool cannot set a password, reset MFA enrollment or "
-            "clear a failed-login lockout (deny is not the lockout); say so "
-            "instead of trying another tool." + RESULT_HELP
+            "fields. A new password comes from reset_user_password. This tool "
+            "cannot reset MFA enrollment or clear a failed-login lockout (deny is "
+            "not the lockout); say so instead of trying another tool." + RESULT_HELP
         ),
         annotations=WRITE,
         tags={"write"},
@@ -1592,6 +1702,38 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         args = {"name": name, **changes, "reset_to_inherited": list(reset)}
         op = _UpdateGroup(changes=changes, reset=reset)
         return await run_write(ctx, deps, op, [name], args)
+
+    @mcp.tool(
+        name="reset_user_password",
+        description=(
+            "Give existing users a new generated password. Each password is "
+            "saved to its own file in the output folder and never appears in the "
+            "result. The old password stops working at once; a running VPN "
+            "session stays connected. Only for users with the local "
+            "authentication method. The password of the account this server "
+            "signs in with is never changed here. Refused in automatic approval "
+            "mode. Each item has 'path' and 'reminder'."
+            + SECRET_FILE_HELP
+            + RESULT_HELP
+        ),
+        annotations=WRITE,
+        tags={"write"},
+    )
+    async def reset_user_password(
+        ctx: Context,
+        usernames: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=MAX_NAME)]],
+            Field(
+                max_length=MAX_ITEMS,
+                description=(
+                    "Exact, case-sensitive usernames of existing local users, each "
+                    "once."
+                ),
+            ),
+        ],
+    ) -> Any:
+        op = _ResetUserPassword(output_dir())
+        return await run_write(ctx, deps, op, list(usernames), {"usernames": usernames})
 
     @mcp.tool(
         name="block_group",

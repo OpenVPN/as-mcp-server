@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from fastmcp.exceptions import ToolError
 
+from as_mcp_server.client import ClientHolder
 from as_mcp_server.texts import (
     MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
@@ -22,6 +23,7 @@ from as_mcp_server.texts import (
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK_GROUP,
+    NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
     WARN_RECONNECT,
@@ -29,6 +31,7 @@ from as_mcp_server.texts import (
 from as_mcp_server.tools_users import NOTE_GROUP_LEFT, NOTE_NEW_GROUP
 from as_mcp_server.writes import NOTE_USERPROP_CACHE
 from tests.conftest import call_tool
+from tests.live.conftest import settings_for
 from tests.live.test_writes_live import Live
 from tests.live.vpn_clients import VpnClient, for_the_stand, require_client_image
 
@@ -536,6 +539,48 @@ async def test_remove_from_group_leaves_the_user_in_no_group(scratch) -> None:
             "update_user", {"usernames": [name], "remove_from_group": True}
         )
     assert str(error.value) == MSG_IN_NO_GROUP.format(name=name)
+
+
+async def test_a_reset_password_works_at_once_and_the_old_one_does_not(scratch) -> None:
+    live, name = scratch.live, scratch.user
+    # An administrator, so that a sign-in to the Web API shows the password works.
+    created = await scratch.call(
+        "create_user",
+        {"users": [{"username": name, "generate_password": True, "admin": True}]},
+    )
+    old_path = Path(created["items"][0]["path"])
+    old = old_path.read_text("utf-8").strip()
+
+    seen: list[str] = []
+    result = await scratch.call("reset_user_password", {"usernames": [name]}, seen=seen)
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    path = Path(item["path"])
+    new = path.read_text("utf-8").strip()
+    assert new != old
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert result["notes"] == [NOTE_PASSWORD_RESET]
+    audit = (live.tmp_path / "audit.jsonl").read_text("utf-8")
+    for secret in (old, new):
+        assert secret not in str(result) and secret not in seen[0]
+        assert secret not in audit
+
+    as_new = ClientHolder(
+        settings_for(f"{live.name}.env", live.tmp_path / "new", user=name, password=new)
+    ).get()
+    assert (await as_new.get("/server/info"))["version"]
+    as_old = ClientHolder(
+        settings_for(f"{live.name}.env", live.tmp_path / "old", user=name, password=old)
+    ).get()
+    with pytest.raises(ToolError):
+        await as_old.get("/server/info")
+    path.unlink()
+    old_path.unlink()
+
+    own = live.settings.user
+    with pytest.raises(ToolError) as error:
+        await scratch.call("reset_user_password", {"usernames": [own]})
+    assert str(error.value) == MSG_LOCKOUT.format(name=own)
 
 
 async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -> None:

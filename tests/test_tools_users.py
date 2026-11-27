@@ -22,6 +22,7 @@ from as_mcp_server.outputs import DELIVERY_REMINDER
 from as_mcp_server.server import build
 from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
+    AUTO_PASSWORD,
     MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
@@ -33,6 +34,7 @@ from as_mcp_server.texts import (
     MSG_USE_BLOCK,
     MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
+    NOTE_PASSWORD_RESET,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
     WARN_RECONNECT,
@@ -42,6 +44,7 @@ from as_mcp_server.tools_users import (
     EFFECT_KNOWN_GROUP,
     FIELDS,
     MSG_NOTHING_TO_CHANGE,
+    MSG_PASSWORD_NEEDS_LOCAL,
     NOTE_GROUP_LEFT,
     NOTE_KNOWN_GROUP,
     NOTE_NEW_GROUP,
@@ -2029,7 +2032,7 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
         for name, tool in tools.items()
         if tool.annotations.read_only_hint is False and name != "login"
     ]
-    assert len(flow) == 18
+    assert len(flow) == 19
     for name in flow:
         description = tools[name].description
         assert "unknown_after_timeout" in description, name
@@ -2460,3 +2463,108 @@ async def test_a_user_in_no_group_is_refused(tmp_path: Path) -> None:
         )
     assert str(error.value) == MSG_IN_NO_GROUP.format(name="bob")
     assert server.written() == []
+
+
+# --- reset_user_password ----------------------------------------------------------
+
+
+async def test_a_new_password_goes_to_a_file_and_never_into_the_result(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    result = await server.call(
+        "reset_user_password", {"usernames": ["alice"]}, seen=seen
+    )
+    item = only(result)
+    assert item["outcome"] == "done", item
+    password = server.passwords["alice"]
+    path = Path(item["path"])
+    assert path.read_text("utf-8") == password + "\n"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert item["reminder"] == DELIVERY_REMINDER
+    assert item["before"]["password_defined"] is False
+    assert item["after"]["password_defined"] is True
+    assert password not in json.dumps(result)
+    assert password not in seen[0]
+    assert password not in (tmp_path / "audit.jsonl").read_text("utf-8")
+    lines = seen[0].splitlines()
+    assert lines[1] == "Action: Reset password (1 item): alice"
+    assert "    password: (not set) -> new, saved to a file" in lines
+    assert f"    also: {NOTE_PASSWORD_RESET}" in lines
+    assert result["notes"] == [NOTE_PASSWORD_RESET]
+    assert [line["outcome"] for line in server.audit()] == ["applied"]
+
+
+async def test_two_users_get_two_files(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.passwords["bob"] = "Old-pass-1"
+    result = await server.call("reset_user_password", {"usernames": ["alice", "bob"]})
+    paths = [Path(item["path"]) for item in result["items"]]
+    assert len(set(paths)) == 2
+    assert server.passwords["bob"] != "Old-pass-1"
+    assert result["items"][1]["before"]["password_defined"] is True
+
+
+async def test_a_user_with_ldap_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.users["dave"] = {"own": {"auth_method": "ldap"}, "group": None}
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_password", {"usernames": ["dave"]})
+    assert str(error.value) == MSG_PASSWORD_NEEDS_LOCAL.format(
+        name="dave", method="ldap"
+    )
+    assert server.written() == []
+
+
+async def test_the_own_account_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_password", {"usernames": ["openvpn"]})
+    assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert server.written() == []
+    assert server.audit()[-1]["outcome"] == "refused_lockout"
+
+
+async def test_automatic_mode_refuses_a_password_reset(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "reset_user_password", {"usernames": ["alice"]}, answer="none"
+        )
+    assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_PASSWORD)
+    assert server.written() == []
+
+
+async def test_a_failed_change_removes_the_file(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.fail[PASSWORD] = httpx.Response(403, json={"reason": "policy"})
+    result = await server.call("reset_user_password", {"usernames": ["alice"]})
+    item = only(result)
+    assert item["outcome"] == "failed"
+    assert "password was not set" in item["detail"]
+    assert "path" not in item
+    out = server.settings.resolved_output_dir()
+    assert not out.exists() or list(out.iterdir()) == []
+    assert result["notes"] == []
+
+
+async def test_a_timeout_keeps_the_file_and_is_unknown(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.fail[PASSWORD] = httpx.ReadTimeout("slow")
+    result = await server.call("reset_user_password", {"usernames": ["alice"]})
+    item = only(result)
+    assert item["outcome"] == "unknown_after_timeout"
+    assert Path(item["path"]).exists()
+    assert item["reminder"] == DELIVERY_REMINDER
+    assert "the password in the file may or may not be set" in item["detail"]
+    assert server.sent(PASSWORD) and len(server.sent(PASSWORD)) == 1
+
+
+async def test_a_name_that_is_a_group_is_refused_for_a_password(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call("reset_user_password", {"usernames": ["staff"]})
+    assert str(error.value) == "staff is a group, not a user."
