@@ -436,13 +436,19 @@ async def test_write_mode_swaps_the_opening_of_the_instructions_and_nothing_else
         "A tool that takes a list handles up to 100 items in one call with one "
         "approval; prefer one list call",
         "over many single calls.",
-        "To block a user, use block_user; it also disconnects the user's sessions.",
-        "The members of a new group cannot connect until a warm restart of Access "
-        "Server:",
-        "say so and offer warm_restart. Call it only when the user asks or agrees; "
-        "it asks for approval in every mode.",
-        "A user moved to another group gets it at the next VPN connection, not in a "
-        "running session.",
+        "To block a user or a group, use block_user or block_group; they also "
+        "disconnect the blocked sessions.",
+        "The members of a new group cannot connect, and a changed access list does "
+        "not apply, until a warm",
+        "restart of Access Server: say so and offer warm_restart. Call it only when "
+        "the user asks or agrees; it",
+        "asks for approval in every mode.",
+        "A user moved to another group or out of its group gets the new values at "
+        "the next VPN connection, not",
+        "in a running session; domain rules also apply from the next connection.",
+        "A domain rule acts on names looked up through the VPN's DNS; a deny rule "
+        "does not block the address,",
+        "an access list does.",
     ]
     # Claude Code cuts the instructions of a server at 4096 characters.
     assert len(WRITE_INSTRUCTIONS) <= 4096

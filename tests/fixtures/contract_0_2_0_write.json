@@ -1,0 +1,914 @@
+[
+ {
+  "name": "block_user",
+  "description": "Block users from the VPN and the web interface: sets deny for each listed user and disconnects the user's running VPN sessions. New connections are refused at once; a running session is not ended by deny alone, so this tool disconnects it and checks that none is left. The user, the user's profiles and settings stay as they are. To unblock, call update_user with deny=false. The account this server signs in with cannot be blocked. Each item of 'items': outcome, disconnected (number of sessions) and a note on download links. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "description": "Exact, case-sensitive usernames to block, up to 100, each once. Every name must be an existing user (not a group); one bad name refuses the whole call before anyone is blocked.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "usernames"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "create_connection_profile",
+  "description": "Create a new connection profile (an .ovpn file: a client certificate with its private key) for each listed user. The file is saved on the administrator's computer and only its path is returned; the content of a profile is never returned. Profiles the user already has stay valid. The administrator approves the whole list once. Each item of 'items': outcome, path, serial (a string of digits) and a reminder to delete the file after delivery. To let a user fetch the profile themselves, use create_profile_download_link instead. Do not open, copy, send or delete the saved file yourself: give the user its path and the reminder. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "description": "Exact, case-sensitive usernames, up to 100, each once. Every name must be an existing user (not a group); one bad name refuses the whole call before anything is created.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "profile_type": {
+     "default": "userlogin",
+     "description": "userlogin (default): the user types their password when connecting. autologin: connects without a password; needs autologin enabled for the user and is refused in automatic approval mode.",
+     "enum": [
+      "userlogin",
+      "autologin"
+     ],
+     "type": "string"
+    },
+    "tls_crypt_v2": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true: a profile for clients that support TLS-Crypt v2; false: the older TLS-Crypt. Omit to let Access Server decide."
+    },
+    "comment": {
+     "anyOf": [
+      {
+       "maxLength": 200,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "A note stored with every created profile and shown by list_connection_profiles, e.g. the device it is for. One line, at most 200 characters."
+    }
+   },
+   "required": [
+    "usernames"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "create_group",
+  "description": "Create a group. Only the fields you give are set on it; every other value is inherited from the server. Members inherit each value they do not set themselves. Important: Access Server refuses the VPN connections of the members of a new group until the server is restarted, so tell the user and offer warm_restart before moving anyone into the group. A name that is already a user or a group is refused. A group with administrator rights or autologin is refused in automatic approval mode. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "name": {
+     "description": "Name of the new group, 1 to 128 characters, case-sensitive. It must not be the name of an existing user or group.",
+     "type": "string"
+    },
+    "admin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true gives administrator rights (Admin UI and API); switching it on is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "auth_method": {
+     "anyOf": [
+      {
+       "enum": [
+        "local",
+        "pam",
+        "radius",
+        "ldap",
+        "saml"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "How to sign in: local, pam, radius, ldap or saml. A change is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "deny": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true blocks every member that does not set deny itself. Omit to inherit the server value."
+    },
+    "deny_web": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true denies sign-in to the web interface and the API; the VPN is not affected. Omit to write nothing for this field."
+    },
+    "autologin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true allows autologin connection profiles, which connect without a password; switching it on is refused in automatic approval mode. Omit to leave it as it is."
+    },
+    "totp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true requires TOTP multi-factor authentication. Switching it off is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "allow_password_change": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user change their own local password. Omit to leave it as it is."
+    },
+    "allow_generate_profiles": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user create their own connection profiles. Omit to leave it as it is."
+    },
+    "reroute_gw": {
+     "anyOf": [
+      {
+       "enum": [
+        "disable",
+        "dns_only",
+        "global"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Which client traffic goes through the VPN gateway. disable: none of the internet traffic; dns_only: only DNS; global: follow the server setting vpn.client.routing.reroute_gw, which is not the same as \"full tunnel\". When read, an inherited value shows as true or false and a set one as the word. Omit to write nothing for this field."
+    }
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "create_profile_download_link",
+  "description": "Create a link through which a user downloads a new connection profile into their OpenVPN client (called Token URL in Access Server), one link for each listed user. The link is saved to a file on the administrator's computer and only the path is returned; the link itself is never returned. A link cannot be revoked or listed afterwards: it works until it expires or its uses run out, also when the user is blocked later. Limits: userlogin at most 168 hours and 5 uses, autologin at most 24 hours and 5 uses. Each item of 'items': outcome, path, valid_until (UTC), usages and a reminder to delete the file after delivery. Do not open, copy, send or delete the saved file yourself: give the user its path and the reminder. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "description": "Exact, case-sensitive usernames, up to 100, each once. Every name must be an existing user (not a group); one bad name refuses the whole call before anything is created.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "profile_type": {
+     "default": "userlogin",
+     "description": "userlogin (default): the user types their password when connecting. autologin: connects without a password; needs autologin enabled for the user and is refused in automatic approval mode.",
+     "enum": [
+      "userlogin",
+      "autologin"
+     ],
+     "type": "string"
+    },
+    "lifetime_seconds": {
+     "default": 86400,
+     "description": "How long the link works, in seconds, from 60. Default 86400 (24 hours). At most 604800 (7 days) for userlogin and 86400 for autologin.",
+     "minimum": 60,
+     "type": "integer"
+    },
+    "usages": {
+     "default": 1,
+     "description": "How many times the link can be used; each use creates one profile. Default 1, at most 5.",
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "usernames"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "create_support_report",
+  "description": "Save the Access Server support report to a local file, for OpenVPN support or for your own troubleshooting. The report is plain text: version and platform, service status, configuration keys, license usage, cluster state, network interfaces, routes and firewall rules. Access Server replaces passwords and keys with [redacted], but the report still holds sensitive settings, so its text is not returned: the result has only path, size_bytes and a reminder. Do not read the file back into the conversation unless the user asks for it. Nothing on the server is changed and no approval is asked. The server runs diagnostic programs to build it, so allow up to 5 minutes; do not call it in a loop.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {}
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "create_user",
+  "description": "Create users on Access Server. Each item names the user and may set a group, administrator rights, an authentication method, a block, and generate_password. A generated password is saved to a file in the output folder and never returned; there is no way to pass a password to this tool. Without generate_password the user has no password. A name that is already a user or a group refuses the whole call. Creating an administrator, or a user with an authentication method other than the one it would inherit, is refused in automatic approval mode. Each item of 'items': outcome, the state after, and path and reminder when a password was generated. To give the user a connection profile, call create_connection_profile afterwards. An existing user cannot get a new password through this server: never delete and create a user again to change a password; say that it is not supported. Do not open, copy, send or delete the saved file yourself: give the user its path and the reminder. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "users": {
+     "description": "The users to create, up to 100, each once.",
+     "items": {
+      "additionalProperties": false,
+      "description": "One user to create.",
+      "properties": {
+       "username": {
+        "description": "Name of the new user, 1 to 128 characters, case-sensitive. It must not be the name of an existing user or group.",
+        "type": "string"
+       },
+       "group": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "default": null,
+        "description": "Exact name of an existing group to put the user in. Omit for no group. A group created since the last Access Server restart refuses the VPN connections of its members."
+       },
+       "admin": {
+        "default": false,
+        "description": "true makes the user an administrator; refused in automatic approval mode. false (default) sets nothing: the value of the group or the server applies.",
+        "type": "boolean"
+       },
+       "auth_method": {
+        "anyOf": [
+         {
+          "enum": [
+           "local",
+           "pam",
+           "radius",
+           "ldap",
+           "saml"
+          ],
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "default": null,
+        "description": "How the user signs in: local, pam, radius, ldap or saml. Omit to inherit the method of the group or the server."
+       },
+       "deny": {
+        "default": false,
+        "description": "true creates the user blocked (no VPN, no web sign-in). false (default) sets nothing.",
+        "type": "boolean"
+       },
+       "generate_password": {
+        "default": false,
+        "description": "true sets a random local password and saves it to a file in the output folder; the result has the path, never the password. Only for a user whose authentication method is local. false (default): the user has no password yet.",
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "username"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "users"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "delete_connection_profiles",
+  "description": "Delete connection profiles for good: the listed serials, or every profile of one user. Give exactly one of serials or username. A deleted profile can no longer be used to connect and cannot be restored; the user needs a new one. A session that is already connected with a deleted profile stays connected until it ends or is disconnected with disconnect_vpn_sessions. The administrator sees the owner, type and comment of every profile before approving. Find serials with list_connection_profiles. The item of 'items' has outcome and 'deleted', the serials that were deleted. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "serials": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Serials of the profiles to delete, up to 100, each a string of digits copied exactly from list_connection_profiles (not a number: serials are larger than a number can hold). Omit when username is given."
+    },
+    "username": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Exact, case-sensitive username: deletes every profile issued to this name, also when the user itself no longer exists. Omit when serials is given."
+    }
+   }
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "delete_group",
+  "description": "Delete one group for good. Its members stay as users and lose their group value and everything they inherited from the group (also a block or MFA set on the group); their running VPN sessions stay connected. The group's access list is deleted. Cannot be undone. The group of the account this server signs in with cannot be deleted. In automatic approval mode the delete is refused when a member would lose MFA, a block or its authentication method with the group. The result lists members_without_group. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "name": {
+     "description": "Exact, case-sensitive name of an existing group (not a user).",
+     "maxLength": 128,
+     "minLength": 1,
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "delete_user",
+  "description": "Delete users for good: each user's connection profiles, the user record, and then the user's running VPN sessions, which Access Server would otherwise leave connected. Cannot be undone. The account this server signs in with cannot be deleted. To keep a user but stop their access, call block_user instead. Each item of 'items': outcome, deleted_profiles and disconnected (numbers). Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "description": "Exact, case-sensitive usernames to delete, up to 100, each once. Every name must be an existing user (not a group); one bad name refuses the whole call before anyone is deleted.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "usernames"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "disconnect_vpn_sessions",
+  "description": "Disconnect running VPN sessions: every session of the listed users, or the listed sessions. Give exactly one of usernames or sessions. The user is not blocked and can connect again right away; to keep a user out, use block_user instead. The VPN client is shown the fixed text \"Disconnected by your administrator.\" Find sessions with get_active_vpn_connections. Each item of 'items': outcome and disconnected (number of sessions). Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Exact, case-sensitive usernames, up to 100: every running session of each is disconnected. A name without a running session refuses the whole call. A session whose username get_active_vpn_connections shows as withheld cannot be named here: pass it in sessions. Omit when sessions is given."
+    },
+    "sessions": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": false,
+        "description": "One VPN session, as get_active_vpn_connections lists it.",
+        "properties": {
+         "daemon_id": {
+          "description": "daemon_id of the session, copied from get_active_vpn_connections, e.g. openvpn_3.",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+         },
+         "client_id": {
+          "description": "client_id of the session inside that daemon, copied from get_active_vpn_connections.",
+          "minimum": 0,
+          "type": "integer"
+         }
+        },
+        "required": [
+         "daemon_id",
+         "client_id"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Single sessions to disconnect, up to 100, each as daemon_id and client_id from get_active_vpn_connections. Use it to end one of several sessions of a user. Omit when usernames is given."
+    },
+    "reason": {
+     "default": "Disconnected through as-mcp-server",
+     "description": "Why, for the Access Server log; the VPN user does not see it. One line, 1 to 200 characters. Default: \"Disconnected through as-mcp-server\".",
+     "maxLength": 200,
+     "minLength": 1,
+     "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+     "type": "string"
+    }
+   }
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "update_group",
+  "description": "Change settings of one group. Only the fields you give are written. The change reaches every member that does not set the value itself. deny=true blocks such members but does not disconnect their running VPN sessions: the preview and 'warnings' in the result name the connected ones; call disconnect_vpn_sessions for them. reset_to_inherited removes the group's own value so the server value applies. A change that would lock out the account this server signs in with is refused. Granting administrator rights, switching MFA off, changing the authentication method and switching autologin on are refused in automatic approval mode. A false writes the group's own false; to make the group follow the server again use reset_to_inherited. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "name": {
+     "description": "Exact, case-sensitive name of an existing group (not a user).",
+     "maxLength": 128,
+     "minLength": 1,
+     "type": "string"
+    },
+    "admin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true gives administrator rights (Admin UI and API); switching it on is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "auth_method": {
+     "anyOf": [
+      {
+       "enum": [
+        "local",
+        "pam",
+        "radius",
+        "ldap",
+        "saml"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "How to sign in: local, pam, radius, ldap or saml. A change is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "deny": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true blocks every member that does not set deny itself; their running sessions stay connected. false unblocks. Omit to leave it as it is."
+    },
+    "deny_web": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true denies sign-in to the web interface and the API; the VPN is not affected. Omit to write nothing for this field."
+    },
+    "autologin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true allows autologin connection profiles, which connect without a password; switching it on is refused in automatic approval mode. Omit to leave it as it is."
+    },
+    "totp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true requires TOTP multi-factor authentication. Switching it off is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "allow_password_change": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user change their own local password. Omit to leave it as it is."
+    },
+    "allow_generate_profiles": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user create their own connection profiles. Omit to leave it as it is."
+    },
+    "reroute_gw": {
+     "anyOf": [
+      {
+       "enum": [
+        "disable",
+        "dns_only",
+        "global"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Which client traffic goes through the VPN gateway. disable: none of the internet traffic; dns_only: only DNS; global: follow the server setting vpn.client.routing.reroute_gw, which is not the same as \"full tunnel\". When read, an inherited value shows as true or false and a set one as the word. Omit to write nothing for this field."
+    },
+    "reset_to_inherited": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "deny",
+         "deny_web",
+         "admin",
+         "autologin",
+         "auth_method",
+         "totp",
+         "allow_password_change",
+         "allow_generate_profiles",
+         "reroute_gw"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Fields to remove from the record, so the value of the group (for a user) or of the server applies again. The preview shows the value that will apply. A field cannot be set and reset in one call."
+    }
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "update_user",
+  "description": "Change settings of existing users: the same change for every listed user. Only the fields you give are written; an omitted field stays as it is. group moves the users into another group; reset_to_inherited removes a user's own value so the group or server value applies. To block a user call block_user (deny=true is refused here); deny=false unblocks. A move into a blocked group, or a reset of deny, can block a user without disconnecting them: the preview and 'warnings' in the result name such users. The account this server signs in with cannot be locked out. Granting administrator rights, switching MFA off, changing the authentication method and switching autologin on are refused in automatic approval mode. A false writes the user's own false, which then overrides the group and the server; to make a user follow the group or the server again use reset_to_inherited. A call with deny=true is not run at all: call block_user, then update_user for the other fields. This tool cannot set a password, reset MFA enrollment, clear a failed-login lockout (deny is not the lockout) or take a user out of every group; say so instead of trying another tool. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "usernames": {
+     "description": "Exact, case-sensitive usernames, up to 100, each once. Every name must be an existing user (not a group); one bad name refuses the whole call before anything is changed.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "deny": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "false unblocks the user. true is refused: use block_user, which also disconnects. Omit to write nothing for this field."
+    },
+    "deny_web": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true denies sign-in to the web interface and the API; the VPN is not affected. Omit to write nothing for this field."
+    },
+    "admin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true gives administrator rights (Admin UI and API); switching it on is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "autologin": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true allows autologin connection profiles, which connect without a password; switching it on is refused in automatic approval mode. Omit to leave it as it is."
+    },
+    "auth_method": {
+     "anyOf": [
+      {
+       "enum": [
+        "local",
+        "pam",
+        "radius",
+        "ldap",
+        "saml"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "How to sign in: local, pam, radius, ldap or saml. A change is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "group": {
+     "anyOf": [
+      {
+       "maxLength": 128,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Exact name of an existing group to move the users into. Omit to leave the group as it is; this tool cannot take a user out of every group. A group created since the last Access Server restart refuses the VPN connections of its members."
+    },
+    "totp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true requires TOTP multi-factor authentication. Switching it off is refused in automatic approval mode. Omit to write nothing for this field."
+    },
+    "allow_password_change": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user change their own local password. Omit to leave it as it is."
+    },
+    "allow_generate_profiles": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "true lets the user create their own connection profiles. Omit to leave it as it is."
+    },
+    "reroute_gw": {
+     "anyOf": [
+      {
+       "enum": [
+        "disable",
+        "dns_only",
+        "global"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Which client traffic goes through the VPN gateway. disable: none of the internet traffic; dns_only: only DNS; global: follow the server setting vpn.client.routing.reroute_gw, which is not the same as \"full tunnel\". When read, an inherited value shows as true or false and a set one as the word. Omit to write nothing for this field."
+    },
+    "reset_to_inherited": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "deny",
+         "deny_web",
+         "admin",
+         "autologin",
+         "auth_method",
+         "totp",
+         "allow_password_change",
+         "allow_generate_profiles",
+         "reroute_gw"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Fields to remove from the record, so the value of the group (for a user) or of the server applies again. The preview shows the value that will apply. A field cannot be set and reset in one call."
+    }
+   },
+   "required": [
+    "usernames"
+   ]
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ },
+ {
+  "name": "warm_restart",
+  "description": "Warm restart of Access Server, so that changes that wait for a restart take effect: a group created since the last restart starts to accept the VPN connections of its members, and access rules changed since then reach the firewall of the server. A user moved to another group does not need it: the user gets that group at the next connection, and a restart does not move a running session to the new group. Call it only when the user asks for a restart, or agrees after a tool said one is needed; never decide it yourself and never call it after every change. The administrator is always asked for approval, also in automatic approval mode; an app that cannot show the approval prompt cannot restart. Connected VPN clients can be disconnected and have to reconnect; the approval question says how many are connected. No parameters. Result: 'items', one per target, each with 'outcome': done, partial, failed, refused_changed, unknown_after_timeout or not attempted. The list stops at the first item that is not done. Tell the user how many items were done, read 'detail' for what is left to do, never repeat an item that is done, partial or unknown_after_timeout, and relay 'notes'.",
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {}
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  }
+ }
+]

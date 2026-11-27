@@ -20,6 +20,7 @@ on purpose: tests assert that the server redacts them.
 | `access_rulesets_default.json` | 200 | global owner spelled __DEFAULT__ |
 | `access_rulesets_staff.json` | 200 | group owner |
 | `contract_0_1_0.json` | - | not a server response: the tool list of tag `v0.1.0` (name, description, inputSchema, annotations), dumped through an in-memory MCP client; `tests/test_contract.py` compares against it. Two deliberate changes in 0.2.0: the description of `get_server_info` (hostname is not `host.name`) and one more sentence in the description of `list_users` (access lists are read with `list_access_lists`) |
+| `contract_0_2_0_write.json` | - | not a server response: the thirteen write tools of 0.2.0 (commit `f150c90`, write mode minus read mode), dumped the same way; `tests/test_contract.py` keeps them unchanged except `update_user` (new parameter `remove_from_group`) and `update_group` (deny=true points to `block_group`) |
 | `default_user.json` | 200 |  |
 | `error_bad_owner_400.json` | 400 | documented DEFAULT is rejected |
 | `error_bad_ruleset_400.json` | 400 |  |
