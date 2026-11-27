@@ -207,6 +207,7 @@ WRITE_TOOLS = (
     "delete_user",
     "disconnect_vpn_sessions",
     "modify_access_list",
+    "modify_access_rules",
     "save_access_ruleset",
     "update_group",
     "update_user",

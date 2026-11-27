@@ -275,6 +275,8 @@ allowing rule (`nat`) with an address from `100.64.0.0/10` and forwards the traf
 to the real host; the real address stays closed.
 
 - A rule applies from the next connection. A client that stays connected does not see it.
+- Through the `100.64.0.x` answer of a `nat` rule, ping and HTTP reach the host; the real
+  address stays closed (live test of `modify_access_rules`, 2026-11-27).
 - `route` also answers with a `100.64.0.x` address, but the host is not reachable on the
   stand: the probe network has no route back to the VPN client subnet. Expected with a
   routed (not NATed) path.

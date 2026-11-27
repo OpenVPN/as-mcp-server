@@ -1,5 +1,5 @@
 """Write-mode tools for access control: `modify_access_list`, `save_access_ruleset`,
-`delete_access_rulesets`, `assign_access_ruleset`.
+`delete_access_rulesets`, `assign_access_ruleset`, `modify_access_rules`.
 
 Measured on 3.1.0 and 3.2.4: the first entry of an access list that matches wins;
 one /userprop/access/set request with items_remove and items_append reorders a
@@ -9,6 +9,8 @@ only after a warm restart.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 from ipaddress import IPv4Network
 from typing import Annotated, Any, Literal
@@ -40,6 +42,7 @@ from as_mcp_server.texts import (
     MSG_NO_ACCESS_CHANGE,
     MSG_NO_SUCH_RULESET,
     NOTE_ACCESS_LIST_RESTART,
+    NOTE_DOMAIN_DENY,
     NOTE_DOMAIN_RULES,
     NOTE_GLOBAL_IP,
     WARN_HIDDEN,
@@ -62,6 +65,7 @@ TOOLS = (
     "save_access_ruleset",
     "delete_access_rulesets",
     "assign_access_ruleset",
+    "modify_access_rules",
 )
 PRIVATE_ACCESS = "vpn.server.routing.private_access"
 MSG_NO_DEFAULT_VIA = (
@@ -114,6 +118,23 @@ MSG_RULESET_COMMENT = (
 # Of the rule sets of one owner the lower position applies first (measured); a new
 # one goes after the last, one step further.
 POSITION_STEP = 100
+RULE_TYPE = "domain_routing"
+# The match types measured on 3.1.0 and 3.2.4; the not_* ones of the API are not.
+MatchType = Literal["domain", "subdomain", "domain_or_subdomain"]
+RuleAction = Literal["route", "nat", "deny", "bypass"]
+PHRASES = {
+    "domain": "{domain}",
+    "subdomain": "subdomains of {domain}",
+    "domain_or_subdomain": "{domain} and its subdomains",
+}
+MSG_NO_RULE_CHANGE = (
+    "Refused: nothing to change. Give at least one rule to add, update or delete."
+)
+MSG_BYPASS = (
+    "bypass answers the name with its real address and opens nothing through the "
+    "VPN for it (measured with a full tunnel)."
+)
+_LABEL = re.compile(r"[a-z0-9-]{1,63}")
 IcmpType = Literal[ICMP_TYPES]  # type: ignore[valid-type]
 
 
@@ -188,6 +209,90 @@ class EntryParam(BaseModel):
             IPv4Network(self.subnet),
             tuple(service.service() for service in self.services),
         )
+
+
+def _domain(value: str) -> str:
+    """A domain name as Access Server compares it: lower case, no trailing dot."""
+    name = value.lower()
+    if name.endswith("."):
+        name = name[:-1]
+    if name.startswith("*."):
+        under = name[2:]
+        raise ValueError(
+            f"{value} is not a domain name: for the names under {under} give "
+            f"{under} with match_type subdomain"
+        )
+    if not name.isascii():
+        raise ValueError(f"{value} is not ASCII: give the punycode form (xn--...)")
+    if len(name) > 253 or not all(_LABEL.fullmatch(part) for part in name.split(".")):
+        raise ValueError(
+            f"{value} is not a domain name: labels of letters, digits and hyphens, "
+            "1 to 63 characters each, 253 characters in all"
+        )
+    return name
+
+
+def _one_line(value: str | None) -> str | None:
+    if value is not None and not value.isprintable():
+        raise ValueError("a comment is printable characters on one line")
+    return value
+
+
+class RuleParam(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    domain: str = Field(
+        min_length=1,
+        max_length=254,
+        description="Domain name, such as intranet.example.com; no wildcards.",
+    )
+    match_type: MatchType = Field(
+        "domain_or_subdomain",
+        description=(
+            "domain: only this name; subdomain: the names under it; "
+            "domain_or_subdomain: both."
+        ),
+    )
+    action: RuleAction = Field(
+        description="nat, route, deny or bypass (see the tool description)."
+    )
+    position: int | None = Field(
+        None,
+        ge=1,
+        description="Lower applies first. Omit to put it after the last rule.",
+    )
+    comment: str = Field("", max_length=MAX_RULESET_COMMENT)
+
+    @field_validator("domain")
+    @classmethod
+    def _valid_domain(cls, value: str) -> str:
+        return _domain(value)
+
+    @field_validator("comment")
+    @classmethod
+    def _valid_comment(cls, value: str) -> str:
+        return _one_line(value)  # type: ignore[return-value]
+
+
+class RuleUpdateParam(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int = Field(ge=1, description="Id of the rule (from list_access_rules).")
+    domain: str | None = Field(None, min_length=1, max_length=254)
+    match_type: MatchType | None = None
+    action: RuleAction | None = None
+    position: int | None = Field(None, ge=1)
+    comment: str | None = Field(None, max_length=MAX_RULESET_COMMENT)
+
+    @field_validator("domain")
+    @classmethod
+    def _valid_domain(cls, value: str | None) -> str | None:
+        return None if value is None else _domain(value)
+
+    @field_validator("comment")
+    @classmethod
+    def _valid_comment(cls, value: str | None) -> str | None:
+        return _one_line(value)
 
 
 @dataclass(frozen=True)
@@ -722,6 +827,236 @@ class _AssignAccessRuleset:
         return state
 
 
+@dataclass(frozen=True)
+class _RuleChange:
+    ruleset_id: int
+    add: tuple[RuleParam, ...]
+    update: tuple[RuleUpdateParam, ...]
+    delete: tuple[int, ...]
+
+
+# (field of a rule, the word the approval question uses for it)
+_RULE_FIELDS = (
+    ("match_data", "domain"),
+    ("match_type", "match_type"),
+    ("action", "action"),
+    ("position", "position"),
+    ("comment", "comment"),
+)
+
+
+@dataclass
+class _ModifyAccessRules:
+    """The domain rules of one rule set: one /access/rules/modify request with the
+    changed and new rules in `add` and the ids to remove in `delete`."""
+
+    tool: str = "modify_access_rules"
+    action: str = "Change rules of rule set"
+    note: str = NOTE_DOMAIN_RULES
+    needs_output_dir: bool = False
+    _name: Any = None
+    _rules: list[dict[str, Any]] = field(default_factory=list)
+    _send: list[dict[str, Any]] = field(default_factory=list)
+    _wanted: list[dict[str, Any]] = field(default_factory=list)
+
+    def key(self, item: _RuleChange) -> str:
+        return str(item.ruleset_id)
+
+    def target(self, item: _RuleChange) -> str:
+        return f"rule set {item.ruleset_id}"
+
+    async def read(
+        self, client: AccessServerClient, item: _RuleChange
+    ) -> dict[str, Any]:
+        self._rules = await _rules_of(client, item.ruleset_id)
+        listed = _rows(await client.post("/access/rulesets/list", {}))
+        self._name = next(
+            (row.get("name") for row in listed if row.get("id") == item.ruleset_id),
+            None,
+        )
+        return {"rules": _rule_labels(self._rules)}
+
+    def plan(self, item: _RuleChange, before: dict[str, Any], own: Own) -> Plan:
+        if not (item.add or item.update or item.delete):
+            raise ToolError(MSG_NO_RULE_CHANGE)
+        by_id = {rule.get("id"): rule for rule in self._rules}
+        named = [update.id for update in item.update] + list(item.delete)
+        for rule_id in named:
+            if named.count(rule_id) > 1:
+                raise ToolError(f"Refused: rule {rule_id} is named twice.")
+            if rule_id not in by_id:
+                raise ToolError(
+                    f"Refused: rule set {item.ruleset_id} has no rule with id "
+                    f"{rule_id}."
+                )
+        lines = [f"deletes {_rule_label(by_id[gone])}" for gone in item.delete]
+        wanted = [rule for rule in self._rules if rule.get("id") not in item.delete]
+        changed: list[dict[str, Any]] = []
+        for update in item.update:
+            old = by_id[update.id]
+            if old.get("type") != RULE_TYPE:
+                raise ToolError(
+                    f"Refused: rule {update.id} is of type {clean(old.get('type'))}, "
+                    "which as-mcp-server does not change; it can only delete it."
+                )
+            given = {
+                "match_data": update.domain,
+                "match_type": update.match_type,
+                "action": update.action,
+                "position": update.position,
+                "comment": update.comment,
+            }
+            new = {**old, **{k: v for k, v in given.items() if v is not None}}
+            diffs = [
+                f"{word} {_value(old.get(key))} -> {_value(new.get(key))}"
+                for key, word in _RULE_FIELDS
+                if new.get(key) != old.get(key)
+            ]
+            if not diffs:
+                raise ToolError(f"Refused: rule {update.id} already has these values.")
+            lines.append(f"changes rule {update.id}: " + ", ".join(diffs))
+            wanted = [new if rule.get("id") == update.id else rule for rule in wanted]
+            changed.append(new)
+        added: list[dict[str, Any]] = []
+        for param in item.add:
+            position = param.position
+            if position is None:
+                used = [
+                    r["position"] for r in wanted if isinstance(r.get("position"), int)
+                ]
+                position = max(used, default=0) + POSITION_STEP
+            rule = {
+                "ruleset_id": item.ruleset_id,
+                "type": RULE_TYPE,
+                "match_type": param.match_type,
+                "match_data": param.domain,
+                "action": param.action,
+                "position": position,
+                "comment": param.comment,
+            }
+            wanted.append(rule)
+            added.append(rule)
+            lines.append(f"adds {_rule_label(rule)}")
+        for rule in (*changed, *added):
+            _check_place(rule, wanted)
+        actions = {rule["action"] for rule in (*changed, *added)}
+        effects = list(lines)
+        self.note = NOTE_DOMAIN_RULES
+        if "deny" in actions:
+            effects.append(NOTE_DOMAIN_DENY)
+            self.note = f"{NOTE_DOMAIN_RULES} {NOTE_DOMAIN_DENY}"
+        if "bypass" in actions:
+            effects.append(MSG_BYPASS)
+        self._send = [*changed, *added]
+        self._wanted = wanted
+        shown = (
+            f"rule set {item.ruleset_id}"
+            if self._name is None
+            else f"{self._name} (id {item.ruleset_id})"
+        )
+        return Plan(
+            PreviewItem(
+                shown,
+                {"rules": (len(self._rules), len(wanted))},
+                tuple(effects),
+                order_after=tuple(_rule_labels(wanted)),
+            ),
+            auto_reason=AUTO_ACCESS,
+        )
+
+    async def apply(
+        self, client: AccessServerClient, item: _RuleChange, before: dict[str, Any]
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if self._send:
+            body["add"] = self._send
+        if item.delete:
+            body["delete"] = list(item.delete)
+        answer = await client.post("/access/rules/modify", body)
+        added = answer.get("added") if isinstance(answer, dict) else None
+        return {"added": added if isinstance(added, list) else []}
+
+    async def verify(
+        self, client: AccessServerClient, item: _RuleChange
+    ) -> dict[str, Any]:
+        rules = await _rules_of(client, item.ruleset_id)
+        if sorted(map(_comparable, rules)) != sorted(map(_comparable, self._wanted)):
+            raise Partial(
+                ["written"],
+                "Access Server shows other rules: "
+                + ("; ".join(_rule_labels(rules)) or "none"),
+            )
+        return {"rules": _rule_labels(rules)}
+
+
+def _value(value: Any) -> Any:
+    return '""' if value == "" else value
+
+
+def _check_place(rule: dict[str, Any], rules: list[dict[str, Any]]) -> None:
+    """A changed or new rule needs a position of its own and names no other rule
+    of the set matches."""
+    for other in rules:
+        if other is rule:
+            continue
+        if other.get("position") == rule["position"]:
+            raise ToolError(
+                f"Refused: {_rule_label(other)} has position {rule['position']} "
+                "too, and which of two rules at one position applies first is not "
+                "known. Give another position."
+            )
+        if other.get("type") == RULE_TYPE and (
+            other.get("match_type"),
+            other.get("match_data"),
+        ) == (rule["match_type"], rule["match_data"]):
+            raise ToolError(
+                f"Refused: {_rule_label(other)} matches the same names. Change it "
+                "with update instead."
+            )
+
+
+async def _rules_of(
+    client: AccessServerClient, ruleset_id: int
+) -> list[dict[str, Any]]:
+    try:
+        answer = await client.post("/access/rules/list", {"ruleset_ids": [ruleset_id]})
+    except ToolError as exc:
+        if _gone(exc, ruleset_id):
+            raise ToolError(MSG_NO_SUCH_RULESET.format(id=ruleset_id)) from exc
+        raise
+    rules = answer.get("rules") if isinstance(answer, dict) else None
+    if not isinstance(rules, list):
+        raise CannotCompute("the rules came back in an unknown shape")
+    return [rule for rule in rules if isinstance(rule, dict)]
+
+
+def _rule_label(rule: dict[str, Any]) -> str:
+    domain, match = rule.get("match_data"), rule.get("match_type")
+    if rule.get("type") == RULE_TYPE and match in PHRASES:
+        kind, phrase = "", PHRASES[match].format(domain=domain)
+    else:
+        kind, phrase = f"{rule.get('type')} ", f"{match} {domain}"
+    where = f"rule {rule['id']}" if "id" in rule else "new"
+    position = rule.get("position")
+    return f"{kind}{rule.get('action')} {phrase} (position {position}, {where})"
+
+
+def _rule_labels(rules: list[dict[str, Any]]) -> list[str]:
+    def order(rule: dict[str, Any]) -> tuple[int, int]:
+        position, rule_id = rule.get("position"), rule.get("id")
+        return (
+            position if isinstance(position, int) else 0,
+            rule_id if isinstance(rule_id, int) else 0,
+        )
+
+    return [_rule_label(rule) for rule in sorted(rules, key=order)]
+
+
+def _comparable(rule: dict[str, Any]) -> str:
+    keys = ("type", "match_type", "match_data", "action", "position", "comment")
+    return json.dumps([rule.get(key) for key in keys])
+
+
 def _holding(ruleset_id: int | None, rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Where one owner has the rule set, and its other rule sets."""
     here = next((row for row in rows if row.get("id") == ruleset_id), None)
@@ -1070,3 +1405,56 @@ def register_access_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "position": position,
         }
         return await run_write(ctx, deps, op, items, args)
+
+    @mcp.tool(
+        name="modify_access_rules",
+        description=(
+            "Add, change or delete the domain rules of one rule set, in one "
+            "request. A domain rule acts on names that a VPN client looks up "
+            "through the DNS of the VPN: nat answers with an address that Access "
+            "Server forwards to the host; route answers the same way but needs a "
+            "route back from the host's network; deny refuses the name but does "
+            "not block the address (use modify_access_list for that); bypass "
+            "answers the real address and opens nothing. Of two rules of one rule "
+            "set the lower position applies first; a new rule goes after the last "
+            "one unless position is given. Give example.com with match_type "
+            "subdomain, not *.example.com. To change a rule, give its id and only "
+            "the fields to change. Rules apply from the next VPN connection of a "
+            "user, without a restart. Refused in automatic approval mode. The item "
+            "has 'added': the ids of the changed and then the new rules." + RESULT_HELP
+        ),
+        annotations=DESTRUCTIVE,
+        tags={"write"},
+    )
+    async def modify_access_rules(
+        ctx: Context,
+        ruleset_id: Annotated[
+            int,
+            Field(ge=1, description="Id of the rule set (from list_access_rulesets)."),
+        ],
+        add: Annotated[
+            list[RuleParam] | None,
+            Field(max_length=MAX_ITEMS, description="New rules."),
+        ] = None,
+        update: Annotated[
+            list[RuleUpdateParam] | None,
+            Field(
+                max_length=MAX_ITEMS,
+                description="Changes of rules, by id; fields not given stay.",
+            ),
+        ] = None,
+        delete: Annotated[
+            list[Annotated[int, Field(ge=1)]] | None,
+            Field(max_length=MAX_ITEMS, description="Ids of rules to delete."),
+        ] = None,
+    ) -> Any:
+        change = _RuleChange(
+            ruleset_id, tuple(add or ()), tuple(update or ()), tuple(delete or ())
+        )
+        args = {
+            "ruleset_id": ruleset_id,
+            "add": [param.model_dump() for param in change.add],
+            "update": [param.model_dump() for param in change.update],
+            "delete": list(change.delete),
+        }
+        return await run_write(ctx, deps, _ModifyAccessRules(), [change], args)

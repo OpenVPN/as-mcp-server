@@ -18,10 +18,11 @@ from as_mcp_server.texts import (
     MSG_NO_SUCH_RULESET,
     MSG_NOT_WRITABLE,
     NOTE_ACCESS_LIST_RESTART,
+    NOTE_DOMAIN_DENY,
     NOTE_DOMAIN_RULES,
 )
 from as_mcp_server.tools_access_write import MSG_DEFAULT_OWNER, MSG_RULESET_NOTHING
-from tests.live.probe import T1, T2, Probe
+from tests.live.probe import NAME_T1, NAME_T2, T1, T2, Probe
 from tests.live.test_users_groups_live import scratch  # noqa: F401  (the fixture)
 from tests.live.test_writes_live import sacli
 from tests.live.vpn_clients import require_client_image
@@ -365,6 +366,106 @@ async def test_a_rule_set_is_given_moved_and_taken_away(scratch) -> None:  # noq
         )
         assert found["items"][0]["outcome"] == "done", found
         assert found["items"][0]["after"]["position"] == 200
+    finally:
+        if made:
+            await api.post("/access/rulesets/delete", {"ids": made})
+    assert await scratch.call("list_access_rulesets") == before
+
+
+async def test_domain_rules_open_a_name_and_refuse_it(scratch) -> None:  # noqa: F811
+    require_client_image()
+    api = ClientHolder(scratch.live.settings).get()
+    before = await scratch.call("list_access_rulesets")
+    name = scratch.user
+    await scratch.call("create_user", {"users": [{"username": name}]})
+    await scratch.call("update_user", {"usernames": [name], "autologin": True})
+    profile = await scratch.autologin_profile(name)
+    made: list[int] = []
+    try:
+        created = await scratch.call(
+            "save_access_ruleset", {"name": f"{name}-rs", "owners": [name]}
+        )
+        ruleset = created["items"][0]["id"]
+        made.append(ruleset)
+
+        opened = await scratch.call(
+            "modify_access_rules",
+            {
+                "ruleset_id": ruleset,
+                "add": [
+                    {
+                        "domain": "T1.McpProbe.Test.",
+                        "action": "nat",
+                        "match_type": "domain",
+                    }
+                ],
+            },
+        )
+        (item,) = opened["items"]
+        assert item["outcome"] == "done", item
+        (t1_rule,) = item["added"]
+        assert item["after"]["rules"] == [
+            f"nat {NAME_T1} (position 100, rule {t1_rule})"
+        ]
+
+        client = await scratch.connect(name, profile)
+        probe = Probe(client.name)
+        answer = probe.lookup(NAME_T1)
+        assert isinstance(answer, list) and answer[0].startswith("100.64."), answer
+        assert probe.ping(answer[0])
+        assert probe.http(answer[0], 8080)
+        assert not probe.ping(T1)
+        assert probe.lookup(NAME_T2) == [T2]
+
+        seen: list[str] = []
+        changed = await scratch.call(
+            "modify_access_rules",
+            {
+                "ruleset_id": ruleset,
+                "update": [{"id": t1_rule, "action": "deny"}],
+                "add": [{"domain": NAME_T2, "action": "nat", "match_type": "domain"}],
+            },
+            seen=seen,
+        )
+        (item,) = changed["items"]
+        assert item["outcome"] == "done", item
+        assert item["added"][0] == t1_rule
+        assert f"    also: changes rule {t1_rule}: action nat -> deny" in (
+            seen[0].splitlines()
+        )
+        assert NOTE_DOMAIN_DENY in changed["notes"][0]
+
+        client.stop()
+        client = await scratch.connect(name, profile)
+        probe = Probe(client.name)
+        refused = probe.lookup(NAME_T1)
+        if scratch.live.name == "as-latest":
+            assert "REFUSED" in str(refused), refused
+        else:
+            assert refused == [T1], refused
+        assert not probe.ping(T1)
+        answer = probe.lookup(NAME_T2)
+        assert isinstance(answer, list) and answer[0].startswith("100.64."), answer
+        assert probe.ping(answer[0])
+
+        with pytest.raises(ToolError) as error:
+            await scratch.auto(
+                "modify_access_rules", {"ruleset_id": ruleset, "delete": [t1_rule]}
+            )
+        assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_ACCESS)
+        with pytest.raises(ToolError) as error:
+            await scratch.call(
+                "modify_access_rules", {"ruleset_id": ruleset, "delete": [999999]}
+            )
+        assert str(error.value) == (
+            f"Refused: rule set {ruleset} has no rule with id 999999."
+        )
+        cleared = await scratch.call(
+            "modify_access_rules",
+            {"ruleset_id": ruleset, "delete": [t1_rule, item["added"][1]]},
+        )
+        assert cleared["items"][0]["outcome"] == "done", cleared
+        assert cleared["items"][0]["after"] == {"rules": []}
     finally:
         if made:
             await api.post("/access/rulesets/delete", {"ids": made})

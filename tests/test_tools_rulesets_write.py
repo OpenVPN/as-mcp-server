@@ -22,10 +22,13 @@ from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_LAST_OWNER,
     MSG_NO_SUCH_RULESET,
+    NOTE_DOMAIN_DENY,
     NOTE_DOMAIN_RULES,
 )
 from as_mcp_server.tools_access_write import (
+    MSG_BYPASS,
     MSG_DEFAULT_AS_OWNER,
+    MSG_NO_RULE_CHANGE,
     MSG_RULESET_NO_OWNER,
     MSG_RULESET_NOTHING,
     MSG_RULESET_USE_ASSIGN,
@@ -47,6 +50,7 @@ UPDATE = ("POST", "/api/access/rulesets/update")
 DELETE = ("POST", "/api/access/rulesets/delete")
 ASSIGN = ("POST", "/api/access/user-rulesets/modify")
 RULES = ("POST", "/api/access/rules/list")
+MODIFY = ("POST", "/api/access/rules/modify")
 DEFAULT = "__DEFAULT__"
 
 
@@ -74,6 +78,7 @@ class RuleSetServer:
         ]
         self.rules: dict[int, list[dict]] = {1: fixture("access_rules")[1]["rules"]}
         self.next_id = 2
+        self.next_rule = 3
         # A path in here answers with this exception or (status, body) instead.
         self.fail: dict[tuple[str, str], Any] = {}
         status, info = fixture("server_info")
@@ -84,6 +89,7 @@ class RuleSetServer:
             DELETE: self._delete,
             ASSIGN: self._assign,
             RULES: self._rules,
+            MODIFY: self._modify,
         }
         self.router = Router(
             {
@@ -208,11 +214,39 @@ class RuleSetServer:
         rules = [rule for wanted in ids for rule in self.rules[wanted]]
         return httpx.Response(200, json={"rules": rules})
 
+    def _modify(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        known = {rule["id"] for rules in self.rules.values() for rule in rules}
+        for rule in body.get("add", []):
+            if rule["ruleset_id"] not in self.sets:
+                return bad(f"Non-existent ruleset: {rule['ruleset_id']}")
+            if "id" in rule and rule["id"] not in known:
+                return bad(f"Non-existent rule: {rule['id']}")
+        for gone in body.get("delete", []):
+            if gone not in known:
+                return bad(f"Non-existent rule: {gone}")
+        for ruleset, rules in self.rules.items():
+            self.rules[ruleset] = [
+                rule for rule in rules if rule["id"] not in body.get("delete", [])
+            ]
+        added = []
+        for rule in body.get("add", []):
+            if "id" in rule:
+                for rules in self.rules.values():
+                    rules[:] = [rule if r["id"] == rule["id"] else r for r in rules]
+                added.append(rule["id"])
+            else:
+                rule = {"id": self.next_rule, **rule}
+                self.next_rule += 1
+                self.rules[rule["ruleset_id"]].append(rule)
+                added.append(rule["id"])
+        return httpx.Response(200, json={"added": added})
+
     def sent(self, key: tuple[str, str]) -> list[dict]:
         return [body_of(request) for request in self.router.sent(*key)]
 
     def writes(self) -> list[str]:
-        paths = {ADD[1], UPDATE[1], DELETE[1], ASSIGN[1]}
+        paths = {ADD[1], UPDATE[1], DELETE[1], ASSIGN[1], MODIFY[1]}
         return [r.url.path for r in self.router.requests if r.url.path in paths]
 
     def audit(self) -> list[dict]:
@@ -221,6 +255,9 @@ class RuleSetServer:
 
     async def save(self, args: dict[str, Any], **options: Any) -> Any:
         return await call_tool(self.mcp, "save_access_ruleset", args, **options)
+
+    async def rules_call(self, args: dict[str, Any], **options: Any) -> Any:
+        return await call_tool(self.mcp, "modify_access_rules", args, **options)
 
     async def assign(self, args: dict[str, Any], **options: Any) -> Any:
         return await call_tool(self.mcp, "assign_access_ruleset", args, **options)
@@ -775,4 +812,333 @@ async def test_an_assignment_the_server_does_not_show_is_a_partial_result(
     assert item["outcome"] == "partial"
     assert item["detail"] == (
         "Access Server shows alice without rule set 1 (done: written)"
+    )
+
+
+# --- modify_access_rules ---------------------------------------------------------
+
+T1 = "t1.mcpprobe.test"
+INTRANET = "nat intranet.example.com and its subdomains (position 100, rule 1)"
+BLOCKED = "deny blocked.example.com (position 200, rule 2)"
+
+
+def new_rule(domain: str = T1, **more: Any) -> dict[str, Any]:
+    return {
+        "ruleset_id": 1,
+        "type": "domain_routing",
+        "match_type": "domain_or_subdomain",
+        "match_data": domain,
+        "action": "nat",
+        "position": 300,
+        "comment": "",
+        **more,
+    }
+
+
+async def test_a_new_rule_goes_after_the_last_one_in_one_request(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    result = await server.rules_call(
+        {"ruleset_id": 1, "add": [{"domain": T1, "action": "nat"}]}, seen=seen
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert item["added"] == [3]
+    assert server.sent(MODIFY) == [{"add": [new_rule()]}]
+    new = f"nat {T1} and its subdomains (position 300, rule 3)"
+    assert item["before"] == {"rules": [INTRANET, BLOCKED]}
+    assert item["after"] == {"rules": [INTRANET, BLOCKED, new]}
+    lines = seen[0].splitlines()
+    assert lines[1] == "Action: Change rules of rule set (1 item): Staff web (id 1)"
+    assert "    rules: 2 -> 3" in lines
+    assert f"    also: adds nat {T1} and its subdomains (position 300, new)" in lines
+    order = lines.index("    order after the change:")
+    assert lines[order + 1 : order + 4] == [
+        f"      1. {INTRANET}",
+        f"      2. {BLOCKED}",
+        f"      3. nat {T1} and its subdomains (position 300, new)",
+    ]
+    assert result["notes"] == [NOTE_DOMAIN_RULES]
+
+
+async def test_a_domain_is_lower_cased_and_the_trailing_dot_dropped(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    await server.rules_call(
+        {
+            "ruleset_id": 1,
+            "add": [
+                {"domain": "T1.McpProbe.Test.", "action": "nat", "match_type": "domain"}
+            ],
+        }
+    )
+    assert server.sent(MODIFY)[0]["add"][0]["match_data"] == T1
+    assert server.sent(MODIFY)[0]["add"][0]["match_type"] == "domain"
+
+
+async def test_a_wildcard_domain_is_refused_with_a_hint_to_match_type(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "add": [{"domain": "*.mcpprobe.test", "action": "nat"}]}
+        )
+    assert (
+        "*.mcpprobe.test is not a domain name: for the names under mcpprobe.test "
+        "give mcpprobe.test with match_type subdomain"
+    ) in str(error.value)
+    assert server.writes() == []
+
+
+async def test_a_name_that_is_not_a_domain_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    for domain, reason in (
+        ("bad name.test", "is not a domain name"),
+        ("bücher.test", "give the punycode form (xn--...)"),
+        ("a" * 64 + ".test", "is not a domain name"),
+        ("a..test", "is not a domain name"),
+    ):
+        with pytest.raises(ToolError) as error:
+            await server.rules_call(
+                {"ruleset_id": 1, "add": [{"domain": domain, "action": "nat"}]}
+            )
+        assert reason in str(error.value), domain
+    assert server.writes() == []
+
+
+async def test_only_the_measured_match_types_are_offered(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError):
+        await server.rules_call(
+            {
+                "ruleset_id": 1,
+                "add": [{"domain": T1, "action": "nat", "match_type": "not_domain"}],
+            }
+        )
+    assert server.writes() == []
+
+
+async def test_a_deny_rule_carries_the_note_that_the_address_stays_open(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    result = await server.rules_call(
+        {"ruleset_id": 1, "add": [{"domain": T1, "action": "deny"}]}, seen=seen
+    )
+    assert f"    also: {NOTE_DOMAIN_DENY}" in seen[0].splitlines()
+    assert result["notes"] == [f"{NOTE_DOMAIN_RULES} {NOTE_DOMAIN_DENY}"]
+
+
+async def test_a_bypass_rule_says_what_it_does(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    await server.rules_call(
+        {"ruleset_id": 1, "add": [{"domain": T1, "action": "bypass"}]}, seen=seen
+    )
+    assert f"    also: {MSG_BYPASS}" in seen[0].splitlines()
+
+
+async def test_update_and_delete_go_in_one_request(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    result = await server.rules_call(
+        {
+            "ruleset_id": 1,
+            "update": [{"id": 1, "action": "deny"}],
+            "delete": [2],
+            "add": [{"domain": T1, "action": "nat", "position": 50}],
+        },
+        seen=seen,
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert server.sent(MODIFY) == [
+        {
+            "add": [
+                {
+                    "id": 1,
+                    "ruleset_id": 1,
+                    "type": "domain_routing",
+                    "match_type": "domain_or_subdomain",
+                    "match_data": "intranet.example.com",
+                    "action": "deny",
+                    "position": 100,
+                    "comment": "internal web via VPN",
+                },
+                new_rule(position=50),
+            ],
+            "delete": [2],
+        }
+    ]
+    assert item["added"] == [1, 3]
+    lines = seen[0].splitlines()
+    assert "    also: changes rule 1: action nat -> deny" in lines
+    assert f"    also: deletes {BLOCKED}" in lines
+    assert "    rules: 2 -> 2" in lines
+    assert item["after"]["rules"] == [
+        f"nat {T1} and its subdomains (position 50, rule 3)",
+        "deny intranet.example.com and its subdomains (position 100, rule 1)",
+    ]
+
+
+async def test_update_keeps_what_is_not_given(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    server.rules[1][1]["comment"] = ""
+    seen: list[str] = []
+    await server.rules_call(
+        {"ruleset_id": 1, "update": [{"id": 2, "comment": "still blocked"}]},
+        seen=seen,
+    )
+    assert '    also: changes rule 2: comment "" -> still blocked' in (
+        seen[0].splitlines()
+    )
+    (sent,) = server.sent(MODIFY)
+    assert sent == {
+        "add": [
+            {
+                "id": 2,
+                "ruleset_id": 1,
+                "type": "domain_routing",
+                "match_type": "domain",
+                "match_data": "blocked.example.com",
+                "action": "deny",
+                "position": 200,
+                "comment": "still blocked",
+            }
+        ]
+    }
+
+
+async def test_an_unknown_rule_id_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    for args in ({"update": [{"id": 9, "action": "nat"}]}, {"delete": [9]}):
+        with pytest.raises(ToolError) as error:
+            await server.rules_call({"ruleset_id": 1, **args})
+        assert str(error.value) == "Refused: rule set 1 has no rule with id 9."
+    assert server.writes() == []
+
+
+async def test_a_rule_named_twice_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "update": [{"id": 2, "action": "nat"}], "delete": [2]}
+        )
+    assert str(error.value) == "Refused: rule 2 is named twice."
+
+
+async def test_the_filter_type_is_never_sent(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    server.rules[1].append(
+        {
+            "id": 7,
+            "ruleset_id": 1,
+            "type": "filter",
+            "match_type": "domain",
+            "match_data": "f.example.com",
+            "action": "deny",
+            "position": 400,
+            "comment": "",
+        }
+    )
+    server.next_rule = 8
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "update": [{"id": 7, "action": "nat"}]}
+        )
+    assert str(error.value) == (
+        "Refused: rule 7 is of type filter, which as-mcp-server does not change; "
+        "it can only delete it."
+    )
+    seen: list[str] = []
+    await server.rules_call(
+        {"ruleset_id": 1, "add": [{"domain": T1, "action": "nat"}]}, seen=seen
+    )
+    (sent,) = server.sent(MODIFY)
+    assert [rule["type"] for rule in sent["add"]] == ["domain_routing"]
+    assert sent["add"][0]["position"] == 500
+    assert "      3. filter deny domain f.example.com (position 400, rule 7)" in (
+        seen[0].splitlines()
+    )
+    await server.rules_call({"ruleset_id": 1, "delete": [7]})
+    assert server.sent(MODIFY)[-1] == {"delete": [7]}
+
+
+async def test_a_position_another_rule_has_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "add": [{"domain": T1, "action": "nat", "position": 200}]}
+        )
+    assert str(error.value) == (
+        f"Refused: {BLOCKED} has position 200 too, and which of two rules at one "
+        "position applies first is not known. Give another position."
+    )
+
+
+async def test_a_second_rule_for_the_same_name_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {
+                "ruleset_id": 1,
+                "add": [{"domain": "intranet.example.com", "action": "deny"}],
+            }
+        )
+    assert str(error.value) == (
+        f"Refused: {INTRANET} matches the same names. Change it with update instead."
+    )
+
+
+async def test_nothing_to_change_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call({"ruleset_id": 1})
+    assert str(error.value) == MSG_NO_RULE_CHANGE
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "update": [{"id": 1, "action": "nat"}]}
+        )
+    assert str(error.value) == "Refused: rule 1 already has these values."
+    assert server.writes() == []
+
+
+async def test_rules_of_a_rule_set_that_does_not_exist_are_refused(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 9, "add": [{"domain": T1, "action": "nat"}]}
+        )
+    assert str(error.value) == MSG_NO_SUCH_RULESET.format(id=9)
+
+
+async def test_rule_changes_in_automatic_mode_are_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path, mode="auto")
+    with pytest.raises(ToolError) as error:
+        await server.rules_call(
+            {"ruleset_id": 1, "add": [{"domain": T1, "action": "nat"}]}, answer="none"
+        )
+    assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_ACCESS)
+    assert server.writes() == []
+
+
+async def test_rules_the_server_does_not_show_are_a_partial_result(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    server.fail[MODIFY] = (200, {"added": [3]})
+    result = await server.rules_call(
+        {"ruleset_id": 1, "add": [{"domain": T1, "action": "nat"}]}
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "partial"
+    assert item["detail"] == (
+        f"Access Server shows other rules: {INTRANET}; {BLOCKED} (done: written)"
     )
