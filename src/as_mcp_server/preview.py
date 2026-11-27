@@ -76,6 +76,9 @@ class PreviewItem:
     # A list whose order matters, shown in full after the change and left out of
     # the totals. None shows nothing; an empty tuple shows "(empty)".
     order_after: tuple[str, ...] | None = None
+    # What the administrator must not miss. With several items these lines come
+    # right under the action line; with one item they are side effects.
+    warnings: tuple[str, ...] = ()
 
 
 def render(
@@ -103,6 +106,18 @@ def render(
         f"Server: {clean(server_url)}",
         f"Action: {clean(action)} ({count}): {targets}",
     ]
+    several = len(items) > 1
+    if several:
+        # A long list is read from the top: what needs attention comes first.
+        flagged = [item for item in items if item.warnings]
+        if flagged:
+            lines.append(f"{len(flagged)} of {len(items)} items need attention")
+        lines.extend(f"Warning: {clean(warning, 300)}" for warning in warnings)
+        lines.extend(
+            f"Warning: {_head_name(item.target)}: {clean(warning, 300)}"
+            for item in flagged
+            for warning in item.warnings
+        )
     changed = _head_changes(items, head_changes) if head_changes else []
     total = _total(items, len(warnings), changed)
     if total:
@@ -112,7 +127,8 @@ def render(
         lines.append(f"- {shown_name(item.target)}")
         for field, (before, after) in item.changes.items():
             lines.append(f"    {clean(field)}: {_shown(before)} -> {_shown(after)}")
-        lines.extend(f"    also: {clean(effect, 300)}" for effect in item.side_effects)
+        effects = item.side_effects if several else (*item.side_effects, *item.warnings)
+        lines.extend(f"    also: {clean(effect, 300)}" for effect in effects)
         if item.order_after is not None:
             lines.append(
                 "    order after the change:" + ("" if item.order_after else " (empty)")
@@ -121,7 +137,7 @@ def render(
                 f"      {number}. {clean(entry, 300)}"
                 for number, entry in enumerate(item.order_after, 1)
             )
-    if warnings:
+    if warnings and not several:
         lines.append("")
         lines.extend(f"Warning: {clean(warning, 300)}" for warning in warnings)
     return "\n".join(lines)
@@ -161,7 +177,11 @@ def _total(
     shared: dict[str, int] = {}
     order: list[tuple[str, str] | str] = []
     for item in items:
-        for effect in dict.fromkeys(item.side_effects):
+        # One item: its warnings are side effects; several: they head the text.
+        effects = (
+            item.side_effects if len(items) > 1 else item.side_effects + item.warnings
+        )
+        for effect in dict.fromkeys(effects):
             counted = _COUNTED.fullmatch(effect)
             key: tuple[str, str] | str = effect
             if counted:

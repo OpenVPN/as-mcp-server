@@ -1037,7 +1037,12 @@ async def test_a_move_into_a_deny_group_names_the_connected_user_as_not_disconne
         "update_user", {"usernames": ["alice", "carol"], "group": "blocked"}, seen=seen
     )
     line = MSG_NOT_DISCONNECTED.format(name="alice")
-    assert f"    also: {line}" in seen[0]
+    # Two items: what needs attention heads the question.
+    assert seen[0].splitlines()[2:4] == [
+        "1 of 2 items need attention",
+        f"Warning: alice: {line}",
+    ]
+    assert "also:" not in seen[0]
     assert "    deny: false -> true" in seen[0]
     alice, carol = result["items"]
     assert alice["outcome"] == "done" and alice["warnings"] == [line]
@@ -2115,7 +2120,11 @@ async def test_a_move_of_a_connected_user_says_the_session_keeps_the_old_access(
     )
     line = WARN_RECONNECT.format(name="alice")
     assert "disconnect_vpn_sessions" in line and "restart" not in line
-    assert seen[0].count("also:") == 1 and f"    also: {line}" in seen[0]
+    assert seen[0].splitlines()[2:4] == [
+        "1 of 2 items need attention",
+        f"Warning: alice: {line}",
+    ]
+    assert "also:" not in seen[0]
     alice, bob = result["items"]
     assert alice["warnings"] == [line] and "warnings" not in bob
     # The same group again is not a move.

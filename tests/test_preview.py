@@ -21,18 +21,18 @@ def test_the_text_names_the_server_the_action_and_every_item() -> None:
         ],
         ["Access Server 3.3.0 is not on the tested list"],
     )
+    # Several items: the warnings come right under the action line.
     assert text == (
         "Server: https://as.example:943\n"
         "Action: Block user (2 items): bob, eve\n"
+        "Warning: Access Server 3.3.0 is not on the tested list\n"
         "Total: 1 VPN session will end, 1 warning\n"
         "\n"
         "- bob\n"
         "    deny: false -> true\n"
         "    also: 1 VPN session will end\n"
         "- eve\n"
-        "    deny: false -> true\n"
-        "\n"
-        "Warning: Access Server 3.3.0 is not on the tested list"
+        "    deny: false -> true"
     )
 
 
@@ -206,9 +206,10 @@ def test_several_changed_items_name_the_fields_and_the_count() -> None:
         PreviewItem("carol", {"admin": (False, True)}, ("carol is connected",)),
     ]
     text = render(URL, "Update user", items, ["one"], head_changes="users")
-    assert text.splitlines()[2] == (
-        "Total: changes admin, autologin for 3 users, 1 warning"
-    )
+    assert text.splitlines()[2:4] == [
+        "Warning: one",
+        "Total: changes admin, autologin for 3 users, 1 warning",
+    ]
 
 
 def test_many_changes_are_counted_and_side_effects_follow_them() -> None:
@@ -297,3 +298,37 @@ def test_letters_that_render_as_nothing_cannot_pad_a_name_into_a_field() -> None
     name = "bob" + fillers + "admin: false -> false"
     assert clean(name) == "bob admin: false -> false"
     assert shown_name(name) == "bob admin: false -> false" + HIDDEN
+
+
+def test_items_that_need_attention_are_counted_on_the_third_line() -> None:
+    items = [
+        PreviewItem(
+            "alice", {"group": ("staff", "ops")}, warnings=("alice is connected",)
+        ),
+        PreviewItem("bob", {"group": ("staff", "ops")}),
+        PreviewItem("carol", {"group": ("staff", "ops")}, warnings=("carol is new",)),
+    ]
+    lines = render(URL, "Update user", items, ["version not tested"]).splitlines()
+    assert lines[:6] == [
+        f"Server: {URL}",
+        "Action: Update user (3 items): alice, bob, carol",
+        "2 of 3 items need attention",
+        "Warning: version not tested",
+        "Warning: alice: alice is connected",
+        "Warning: carol: carol is new",
+    ]
+    assert lines[6].startswith("Total: ")
+    assert not any(line.startswith("    also:") for line in lines)
+    assert lines[-1] == "    group: staff -> ops"
+
+
+def test_a_single_item_keeps_its_warnings_in_its_block() -> None:
+    item = PreviewItem(
+        "bob", {"deny": (False, True)}, ("ends 1 session",), warnings=("bob is new",)
+    )
+    text = render(URL, "Block user", [item], ["version not tested"])
+    assert text.splitlines()[2] == "Total: ends 1 session, bob is new, 1 warning"
+    assert text.endswith(
+        "    also: ends 1 session\n    also: bob is new\n\nWarning: version not tested"
+    )
+    assert "need attention" not in text

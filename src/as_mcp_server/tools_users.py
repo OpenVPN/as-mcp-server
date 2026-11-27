@@ -871,7 +871,7 @@ class _UpdateUser:
         ]
         self._moves[item] = self._move_warning(item, warnings) if moved else None
         return Plan(
-            PreviewItem(item, changes, self._shown(item, warnings)),
+            PreviewItem(item, changes, warnings=self._shown(item, warnings)),
             (effect,),
             None,
             MSG_AUTO_FRESH_GROUP.format(group=clean(self.group), name=clean(item))
@@ -1138,7 +1138,8 @@ class _UpdateGroup:
             else "applies to every member that does not set the value itself"
         )
         return Plan(
-            PreviewItem(item, changes, (reach, *self._warnings)), tuple(effects)
+            PreviewItem(item, changes, (reach,), warnings=self._warnings),
+            tuple(effects),
         )
 
     async def apply(
