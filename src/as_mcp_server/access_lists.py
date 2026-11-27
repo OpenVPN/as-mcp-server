@@ -7,6 +7,7 @@ what a removal leaves. It never talks to the server.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from ipaddress import IPv4Network
@@ -18,6 +19,7 @@ from as_mcp_server.texts import (
     MSG_CONFLICT_ENTRY,
     MSG_DUPLICATE_ENTRY,
     MSG_NO_SUCH_ENTRY,
+    MSG_NOT_WRITABLE,
 )
 
 Kind = Literal["user", "group"]
@@ -249,3 +251,39 @@ def hidden(entries: Sequence[Item]) -> list[tuple[Entry, Entry]]:
                 found.append((later, earlier))
                 break
     return found
+
+
+def identity(item: Item) -> tuple[Any, ...]:
+    """Items with the same identity are copies: removing one removes all of them.
+    Services count as a set, in case the server compares them that way."""
+    if isinstance(item, Entry):
+        return ("entry", item.accept, item.via, *item.traffic())
+    return ("other", json.dumps(item.raw, sort_keys=True, ensure_ascii=False))
+
+
+def rewrite(
+    current: Sequence[Item], wanted: Sequence[Item], owner: str, kind: Kind
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """`items_remove` and `items_append` of one /userprop/access/set request that
+    turns `current` into `wanted`. The server removes every copy of each removed
+    item first, then appends; so the longest start of `wanted` that is what
+    `current` keeps stays in place, and only the rest is written."""
+    wanted_ids = [identity(item) for item in wanted]
+    for keep in range(len(wanted), -1, -1):
+        kept = set(wanted_ids[:keep])
+        stays = [identity(item) for item in current if identity(item) in kept]
+        if stays == wanted_ids[:keep]:
+            break
+    removed = [item for item in current if identity(item) not in kept]
+    appended = list(wanted[keep:])
+    for item in (*removed, *appended):
+        if isinstance(item, Other) and not item.writable:
+            raise Refusal(
+                MSG_NOT_WRITABLE.format(owner=clean(owner), entry=clean(item.label()))
+            )
+    items_remove: list[dict[str, Any]] = []
+    for item in removed:
+        raw = item.api(owner, kind)
+        if raw not in items_remove:
+            items_remove.append(raw)
+    return items_remove, [item.api(owner, kind) for item in appended]

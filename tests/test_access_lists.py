@@ -14,16 +14,19 @@ from as_mcp_server.access_lists import (
     Refusal,
     Service,
     hidden,
+    identity,
     insert,
     more_specific,
     parse_list,
     remove,
+    rewrite,
 )
 from as_mcp_server.effective import CannotCompute
 from as_mcp_server.texts import (
     MSG_CONFLICT_ENTRY,
     MSG_DUPLICATE_ENTRY,
     MSG_NO_SUCH_ENTRY,
+    MSG_NOT_WRITABLE,
 )
 from tests.conftest import load_fixture
 
@@ -265,3 +268,100 @@ def test_a_server_entry_the_model_cannot_read_is_kept_as_it_is(subnet: dict) -> 
 def test_an_answer_in_an_unknown_shape_cannot_be_computed(body: Any) -> None:
     with pytest.raises(CannotCompute):
         parse_list(body, "u", "user")
+
+
+ALL = Other({"type": "all", "accept": True}, writable=False)
+A, B, C, D = (allow(f"10.0.{n}.0/24") for n in range(4))
+
+
+def server_applies(
+    current: list, removed: list[dict], appended: list[dict], *, broad: bool
+) -> list[dict]:
+    """What the server keeps: every copy of a removed item goes (`broad`: also
+    items that differ only in the order of their services), then the appended."""
+    dicts = [item.api("alice", "user") for item in current]
+    if broad:
+        gone = {
+            identity(item) for item in current if item.api("alice", "user") in removed
+        }
+        kept = [
+            d
+            for item, d in zip(current, dicts, strict=True)
+            if identity(item) not in gone
+        ]
+    else:
+        kept = [d for d in dicts if d not in removed]
+    return kept + appended
+
+
+def check(current: list, wanted: list) -> tuple[list[dict], list[dict]]:
+    removed, appended = rewrite(current, wanted, "alice", "user")
+    expected = [item.api("alice", "user") for item in wanted]
+    for broad in (False, True):
+        assert server_applies(current, removed, appended, broad=broad) == expected
+    return removed, appended
+
+
+def test_an_entry_at_the_end_is_only_appended() -> None:
+    assert check([A, B], [A, B, D]) == ([], [D.api("alice", "user")])
+
+
+def test_the_rewrite_starts_at_the_first_difference() -> None:
+    removed, appended = check([A, B, C], [A, B, D, C])
+    assert removed == [C.api("alice", "user")]
+    assert appended == [D.api("alice", "user"), C.api("alice", "user")]
+
+
+def test_a_removal_alone_removes_only_that_entry() -> None:
+    assert check([A, B, ALL], [A, ALL]) == ([B.api("alice", "user")], [])
+
+
+def test_a_removal_and_an_entry_at_the_end_touch_nothing_else() -> None:
+    assert check([A, B, C], [B, C, D]) == (
+        [A.api("alice", "user")],
+        [D.api("alice", "user")],
+    )
+
+
+def test_the_rewrite_starts_earlier_when_a_tail_entry_has_a_copy_in_front() -> None:
+    removed, appended = check([A, B, C, A], [A, B, D, C, A])
+    assert removed == [item.api("alice", "user") for item in (A, B, C)]
+    assert len(appended) == 5
+
+
+def test_entries_that_differ_only_in_service_order_are_both_removed() -> None:
+    first = allow("10.9.0.0/24", TCP_443, ECHO)
+    second = allow("10.9.0.0/24", ECHO, TCP_443)
+    removed, _ = check([first, B, second], [first, D, B, second])
+    assert first.api("alice", "user") in removed
+    assert second.api("alice", "user") in removed
+
+
+def test_an_entry_of_class_all_in_the_tail_cannot_be_rewritten() -> None:
+    with pytest.raises(Refusal) as refused:
+        rewrite([A, ALL], [D, A, ALL], "alice", "user")
+    assert str(refused.value) == MSG_NOT_WRITABLE.format(
+        owner="alice", entry="allow all"
+    )
+
+
+def test_an_entry_of_class_all_in_front_of_the_change_is_kept() -> None:
+    assert check([ALL, A], [ALL, D, A]) == (
+        [A.api("alice", "user")],
+        [D.api("alice", "user"), A.api("alice", "user")],
+    )
+
+
+def test_an_unchanged_list_needs_no_request() -> None:
+    assert check([A, ALL, B], [A, ALL, B]) == ([], [])
+
+
+def test_the_captured_list_of_alice_takes_a_narrower_deny_in_front() -> None:
+    _, body = load_fixture("access_lists")
+    current = parse_list(body, "alice", "user")
+    new = deny("10.40.0.5/32", TCP_443)
+    wanted = insert(current, new, "alice")
+    assert wanted.index(new) == 1
+    removed, appended = check(current, wanted)
+    assert removed == [item.api("alice", "user") for item in current[1:]]
+    assert appended[0] == new.api("alice", "user")
