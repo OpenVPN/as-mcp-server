@@ -15,6 +15,10 @@ services:
       - "943:943"
     volumes:
       - as-latest-data:/openvpn
+    networks:
+      default: {}
+      probe:
+        ipv4_address: 10.77.0.2
     restart: unless-stopped
 
   # Compatibility target (minimum supported version). Start on demand:
@@ -31,6 +35,10 @@ services:
       - "944:943"
     volumes:
       - as-3-1-0-data:/openvpn
+    networks:
+      default: {}
+      probe:
+        ipv4_address: 10.77.0.3
     restart: unless-stopped
     profiles:
       - compat
@@ -45,6 +53,36 @@ services:
       - ./radius/clients.conf:/etc/raddb/clients.conf:ro
       - ./radius/default:/etc/raddb/sites-enabled/default:ro
     restart: unless-stopped
+
+  # Two hosts that a VPN user reaches only through an access rule: only the Access
+  # Server containers are on the probe network. Each answers ping and HTTP on 8080/8081.
+  probe-t1:
+    build: ./vpn-client3
+    image: as-mcp-dev/vpn-client3:1
+    container_name: probe-t1
+    entrypoint: ["sh", "-c", "cd /tmp && python3 -m http.server 8080 & cd /tmp && python3 -m http.server 8081 & wait"]
+    networks:
+      probe:
+        ipv4_address: 10.77.0.10
+        aliases: [t1.mcpprobe.test]
+    restart: unless-stopped
+
+  probe-t2:
+    image: as-mcp-dev/vpn-client3:1
+    container_name: probe-t2
+    entrypoint: ["sh", "-c", "cd /tmp && python3 -m http.server 8080 & cd /tmp && python3 -m http.server 8081 & wait"]
+    depends_on: [probe-t1]
+    networks:
+      probe:
+        ipv4_address: 10.77.0.11
+        aliases: [t2.mcpprobe.test]
+    restart: unless-stopped
+
+networks:
+  probe:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
 
 volumes:
   as-latest-data:

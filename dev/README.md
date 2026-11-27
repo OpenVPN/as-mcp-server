@@ -97,7 +97,7 @@ For a user named `qa vpn test user` on 3.2.4 (use `as-3-1-0` for 3.1.0):
     docker exec as-latest sacli --user "qa vpn test user" --key type --value user_connect UserPropPut
     docker exec as-latest sacli --user "qa vpn test user" --key prop_autologin --value true UserPropPut
     docker exec as-latest sacli --user "qa vpn test user" GetAutologin > dev/.local/client.ovpn
-    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' as-latest
+    docker inspect -f '{{(index .NetworkSettings.Networks "dev_default").IPAddress}}' as-latest
     # replace the address in the "remote" lines of client.ovpn with that one: the profile
     # carries host.name, and the containers can swap addresses after a restart
     docker run -d --rm --name vpn-client --network dev_default --cap-add NET_ADMIN \
@@ -139,6 +139,38 @@ The stand allows two VPN connections at
 a time (3.1.0 is unlicensed, 3.2.4 runs a trial), so stop a client with `docker stop`, not
 `docker kill`: a killed client stays in `/vpn/status` and keeps its slot until the server
 times it out.
+
+### The probe network: traffic through the VPN
+
+Compose puts both Access Servers on a second network, `dev_probe` (10.77.0.0/24), with two
+hosts that nothing else can reach:
+
+| Host | Address | Name |
+|---|---|---|
+| `probe-t1` | `10.77.0.10` | `t1.mcpprobe.test` |
+| `probe-t2` | `10.77.0.11` | `t2.mcpprobe.test` |
+
+Each answers ping and HTTP on ports 8080 and 8081. `vpn.server.routing.private_network.0`
+(172.21.0.0/16) does not cover 10.77, so a VPN user reaches them only through an access rule.
+The names resolve through the DNS of the VPN, `172.27.224.1`: Access Server sends that DNS
+traffic to its own DNS proxy, which asks Docker's resolver.
+
+`tests/live/probe.py` checks traffic from a connected client: `Probe(container).ping(ip)`,
+`.http(ip, port)` and `.lookup(name)`. The checks run in a sidecar that shares the client's
+network (`docker run --network container:<client>`), because the OpenVPN 3 image has no ping.
+By hand, with a client container named `vpn-client`:
+
+    docker run --rm --network container:vpn-client --entrypoint sh as-mcp-dev/vpn-client:1 \
+      -c 'nslookup t1.mcpprobe.test 172.27.224.1; ping -c 2 10.77.0.10'
+
+Two traps:
+
+- Each stand now has two addresses, so `docker inspect` needs the network name (as above).
+  The old template that printed every address glues them together.
+- Attaching or detaching a network of a running Access Server container leaves firewall
+  lines for the old address. A warm restart keeps them; `docker restart` of the container
+  removes them. A change of the networks in `compose.yaml` recreates the two containers on
+  `docker compose up -d`; their data stays in the volumes.
 
 ### What Access Server does with sessions (measured with real clients)
 

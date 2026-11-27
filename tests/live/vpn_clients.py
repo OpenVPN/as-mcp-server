@@ -48,7 +48,9 @@ def require_client_image() -> None:
 
 
 def address_of(stand: str) -> str:
-    template = "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
+    """The stand's address on the network of the clients; the stand is also on the
+    probe network."""
+    template = f'{{{{(index .NetworkSettings.Networks "{NETWORK}").IPAddress}}}}'
     return docker("inspect", "-f", template, stand, check=True).stdout.strip()
 
 

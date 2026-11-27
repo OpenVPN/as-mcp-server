@@ -25,7 +25,7 @@ live-slow:          ## live tests including the ~11 min real token expiry (dev/R
 live:               ## tests against the Docker dev stand (dev/README.md)
 	OPENVPN_AS_LIVE=1 $(UV) pytest tests/live -v
 
-stand-up:           ## start the dev stand (both Access Servers and FreeRADIUS)
+stand-up:           ## start the dev stand (both Access Servers, FreeRADIUS, two probe hosts)
 	docker compose -f dev/compose.yaml --profile compat up -d
 
 stand-down:         ## stop the dev stand
