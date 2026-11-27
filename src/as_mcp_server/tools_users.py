@@ -49,6 +49,7 @@ from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
     MSG_AUTO_FRESH_GROUP,
     MSG_USE_BLOCK,
+    MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
     WARN_FRESH_GROUP,
     WARN_RECONNECT,
@@ -106,6 +107,7 @@ TOOLS = (
     "create_group",
     "update_group",
     "delete_group",
+    "block_group",
 )
 MAX_NAME = 128
 MAX_MEMBERS_SHOWN = 20
@@ -915,10 +917,8 @@ class _UpdateGroup:
         effects = [Effect("group", item, _guarded(before), _guarded(after))]
         if own.group is not None and own.group.casefold() == item.casefold():
             # The own account follows its group wherever it sets no value itself.
-            effects.append(self._member_effect(own.user, after, own.base))
-        members = [
-            self._member_effect(member, after, own.base) for member in self._members
-        ]
+            effects.append(_member_effect(own.user, after, own.base))
+        members = [_member_effect(member, after, own.base) for member in self._members]
         self._member_effects = members
         self._warnings = not_disconnected(members, self._sessions)
         count = self._group.get("member_count")
@@ -931,13 +931,6 @@ class _UpdateGroup:
         return Plan(
             PreviewItem(item, changes, (reach, *self._warnings)), tuple(effects)
         )
-
-    def _member_effect(
-        self, member: Mapping[str, Any], group: Mapping[str, Any], base: Mapping
-    ) -> Effect:
-        before = _guarded(_state(member))
-        after = user_after(member, {}, [], _values(group), base, fields=FIELDS)
-        return Effect("user", str(member["name"]), before, _guarded(after))
 
     async def apply(
         self, client: AccessServerClient, item: str, before: dict[str, Any]
@@ -957,6 +950,118 @@ class _UpdateGroup:
         group = await read_group(client, item)
         _check_written(group, self.changes, self.reset, ["written"])
         return _state(group)
+
+
+def _member_effect(
+    member: Mapping[str, Any], group: Mapping[str, Any], base: Mapping
+) -> Effect:
+    """What a member that follows `group` (its values after the change) becomes."""
+    before = _guarded(_state(member))
+    after = user_after(member, {}, [], _values(group), base, fields=FIELDS)
+    return Effect("user", str(member["name"]), before, _guarded(after))
+
+
+@dataclass
+class _BlockGroup:
+    """deny=true on a group, then the VPN sessions of the members it blocks: a
+    running session survives a block (measured), as with block_user."""
+
+    tool: str = "block_group"
+    action: str = "Block group"
+    note: str = NOTE_LIVE
+    needs_output_dir: bool = False
+    _group: dict[str, Any] | None = None
+    _members: list[dict[str, Any]] = field(default_factory=list)
+    _sessions: list[dict[str, Any]] = field(default_factory=list)
+    # Members whose deny is true (or not known) after the block, and those whose
+    # sessions were ended.
+    _blocked: list[str] = field(default_factory=list)
+    _disconnected: list[str] = field(default_factory=list)
+
+    def key(self, item: str) -> str:
+        return item.casefold()
+
+    def target(self, item: str) -> str:
+        return item
+
+    async def read(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        group = await read_group(client, item)
+        self._group = group
+        self._members = await _members(client, item)
+        names = sorted(str(member["name"]) for member in self._members)
+        self._sessions = await sessions_of(client, names)
+        return {**_state(group), "members": names}
+
+    def plan(self, item: str, before: dict[str, Any], own: Own) -> Plan:
+        assert self._group is not None
+        after = group_after(self._group, {"deny": True}, [], own.base, fields=FIELDS)
+        effects = [Effect("group", item, _guarded(before), _guarded(after))]
+        if own.group is not None and own.group.casefold() == item.casefold():
+            # The own account follows its group wherever it sets no value itself.
+            effects.append(_member_effect(own.user, after, own.base))
+        members = [_member_effect(member, after, own.base) for member in self._members]
+        self._blocked = sorted(m.name for m in members if m.after["deny"] is not False)
+        kept = sorted(m.name for m in members if m.after["deny"] is False)
+        connected = {session.get("username") for session in self._sessions}
+        cut = [name for name in self._blocked if name in connected]
+        lines = ["the group is blocked already"] if before["deny"] is True else []
+        lines.append(f"the group has {len(members)} member(s)")
+        lines.append(
+            f"disconnects the VPN sessions of {len(cut)} member(s): {_some_names(cut)}"
+            if cut
+            else "no blocked member is connected now"
+        )
+        if kept:
+            lines.append(
+                "not blocked, because they set deny=false themselves: "
+                + _some_names(kept)
+            )
+        return Plan(
+            PreviewItem(item, {"deny": (before["deny"], True)}, tuple(lines)),
+            tuple(effects),
+        )
+
+    def _done(self) -> list[str]:
+        return ["deny set", *(f"disconnected {name}" for name in self._disconnected)]
+
+    async def apply(
+        self, client: AccessServerClient, item: str, before: dict[str, Any]
+    ) -> dict[str, Any]:
+        # deny first: a client that is disconnected before it is blocked reconnects.
+        await client.post("/userprop/set", [{"name": item, "deny": True}])
+        self._disconnected = []
+        names: list[str] = []
+        try:
+            sessions = await sessions_of(client, self._blocked)
+            names = sorted({str(session["username"]) for session in sessions})
+            for name in names:
+                await disconnect(client, user=name)
+                self._disconnected.append(name)
+        except ToolError as exc:
+            left = [name for name in names if name not in self._disconnected]
+            who = ", ".join(left) if left else f"the members of {item}"
+            raise Partial(
+                self._done(), f"{exc} Call disconnect_vpn_sessions for: {who}."
+            ) from exc
+        return {"disconnected": list(self._disconnected)}
+
+    async def verify(self, client: AccessServerClient, item: str) -> dict[str, Any]:
+        group = await read_group(client, item)
+        state = _state(group)
+        if state["deny"] is not True:
+            raise Partial(
+                ["written"], "Access Server does not show the group as blocked"
+            )
+        sessions = await sessions_of(client, self._blocked)
+        left = [
+            name
+            for name in sorted({str(session["username"]) for session in sessions})
+            if await still_connected(client, user=name)
+        ]
+        if left:
+            raise Partial(self._done(), f"{MSG_STILL_CONNECTED} for: {', '.join(left)}")
+        members = await _members(client, item)
+        return {**state, "members": sorted(str(member["name"]) for member in members)}
 
 
 @dataclass
@@ -1385,9 +1490,10 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         description=(
             "Change settings of one group. Only the fields you give are written. "
             "The change reaches every member that does not set the value itself. "
-            "deny=true blocks such members but does not disconnect their running "
-            "VPN sessions: the preview and 'warnings' in the result name the "
-            "connected ones; call disconnect_vpn_sessions for them. "
+            "To block a group use block_group, which also disconnects the members "
+            "it blocks. When a reset of deny blocks members, their running VPN "
+            "sessions stay connected: the preview and 'warnings' in the result "
+            "name the connected ones. "
             "reset_to_inherited removes the group's own value so the server "
             "value applies. A change that would lock out the account this server "
             "signs in with is refused. Granting administrator rights, switching "
@@ -1408,9 +1514,9 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             bool | None,
             Field(
                 description=(
-                    "true blocks every member that does not set deny itself; "
-                    "their running sessions stay connected. false unblocks. Omit "
-                    "to leave it as it is."
+                    "false unblocks the members that do not set deny "
+                    "themselves. To block, use block_group. Omit to leave it as "
+                    "it is."
                 )
             ),
         ] = None,
@@ -1422,6 +1528,8 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         reroute_gw: RerouteGwParam = None,
         reset_to_inherited: Reset = None,
     ) -> Any:
+        if deny is True:
+            raise ToolError(MSG_USE_BLOCK_GROUP)
         changes, reset = _changes(
             reset_to_inherited,
             deny=deny,
@@ -1439,6 +1547,35 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         args = {"name": name, **changes, "reset_to_inherited": list(reset)}
         op = _UpdateGroup(changes=changes, reset=reset)
         return await run_write(ctx, deps, op, [name], args)
+
+    @mcp.tool(
+        name="block_group",
+        description=(
+            "Block groups: deny=true on each group, then disconnect the running "
+            "VPN sessions of the members it blocks (a running session survives a "
+            "block otherwise). A member that sets deny=false itself stays allowed "
+            "and connected; the approval question names such members. The group "
+            "of the account this server signs in with is refused unless that "
+            "account sets deny=false itself. Unblock with update_group "
+            "(deny=false, or reset_to_inherited). The item has 'disconnected': "
+            "the members whose sessions were ended." + RESULT_HELP
+        ),
+        annotations=DESTRUCTIVE,
+        tags={"write"},
+    )
+    async def block_group(
+        ctx: Context,
+        names: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=MAX_NAME)]],
+            Field(
+                max_length=MAX_ITEMS,
+                description="Exact, case-sensitive names of the groups to block.",
+            ),
+        ],
+    ) -> Any:
+        return await run_write(
+            ctx, deps, _BlockGroup(), list(names), {"names": list(names)}
+        )
 
     @mcp.tool(
         name="delete_group",

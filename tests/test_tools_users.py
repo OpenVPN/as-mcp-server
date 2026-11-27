@@ -29,6 +29,7 @@ from as_mcp_server.texts import (
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
+    MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
@@ -1625,15 +1626,20 @@ async def test_blocking_the_own_group_is_refused_when_the_own_account_inherits_i
     for mode in ("prompt", "auto"):
         server = FakeServer(tmp_path / mode, mode=mode)
         server.users["openvpn"]["group"] = "staff"
-        for args in ({"deny": True}, {"deny_web": True}, {"admin": False}):
+        calls = (
+            ("block_group", {"names": ["staff"]}),
+            ("update_group", {"name": "staff", "deny_web": True}),
+            ("update_group", {"name": "staff", "admin": False}),
+        )
+        for tool, args in calls:
             before = len(server.audit())
-            if args == {"admin": False}:
+            if args.get("admin") is False:
                 # The own account sets admin itself: the group value does not reach it.
-                result = await server.call("update_group", {"name": "staff", **args})
+                result = await server.call(tool, args)
                 assert only(result)["outcome"] == "done"
                 continue
             with pytest.raises(ToolError) as error:
-                await server.call("update_group", {"name": "staff", **args})
+                await server.call(tool, args)
             assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
             assert server.audit()[before]["outcome"] == "refused_lockout"
         assert server.sent(SET) == [[{"name": "staff", "admin": False}]]
@@ -1647,13 +1653,13 @@ async def test_blocking_the_own_group_is_allowed_when_the_own_account_sets_deny_
         "own": {"admin": True, "deny": False, "deny_web": False},
         "group": "staff",
     }
-    result = await server.call("update_group", {"name": "staff", "deny": True})
+    result = await server.call("block_group", {"names": ["staff"]})
     assert only(result)["outcome"] == "done"
     assert server.value("openvpn", "deny") is False
     assert server.value("alice", "deny") is True
 
 
-async def test_a_group_block_names_only_connected_members_that_inherit_it(
+async def test_block_group_sets_deny_then_disconnects_only_blocked_members(
     tmp_path: Path,
 ) -> None:
     server = FakeServer(tmp_path)
@@ -1663,19 +1669,27 @@ async def test_a_group_block_names_only_connected_members_that_inherit_it(
     server.connect("bob", 1)
     server.connect("carol", 2)  # not a member
     seen: list[str] = []
-    result = await server.call(
-        "update_group", {"name": "staff", "deny": True}, seen=seen
-    )
-    line = MSG_NOT_DISCONNECTED.format(name="alice")
-    assert f"    also: {line}" in seen[0]
-    for other in ("bob", "carol", "dave"):
-        assert MSG_NOT_DISCONNECTED.format(name=other) not in seen[0]
+    result = await server.call("block_group", {"names": ["staff"]}, seen=seen)
     item = only(result)
-    assert item["outcome"] == "done" and item["warnings"] == [line]
-    assert "member_sessions" not in item["before"]
-    assert "also: the group has 3 member(s)" in seen[0]
-    assert server.sent(DISCONNECT) == []
-    assert len(server.sessions) == 3
+    assert item["outcome"] == "done", item
+    assert item["disconnected"] == ["alice"]
+    assert server.written() == [SET, DISCONNECT]
+    assert server.sent(SET) == [[{"name": "staff", "deny": True}]]
+    assert [s["username"] for s in server.sessions] == ["bob", "carol"]
+    assert server.value("alice", "deny") is True
+    assert server.value("bob", "deny") is False
+    lines = seen[0].splitlines()
+    assert lines[1] == "Action: Block group (1 item): staff"
+    assert "    deny: false -> true" in lines
+    assert "    also: the group has 3 member(s)" in lines
+    assert "    also: disconnects the VPN sessions of 1 member(s): alice" in lines
+    assert (
+        "    also: not blocked, because they set deny=false themselves: bob"
+    ) in lines
+    assert item["before"]["members"] == ["alice", "bob", "dave"]
+    assert item["after"]["deny"] is True
+    assert result["notes"] == [NOTE_LIVE]
+    assert [line["outcome"] for line in server.audit()] == ["applied"]
 
 
 async def test_a_group_change_that_cannot_block_reads_no_sessions(
@@ -1856,7 +1870,7 @@ async def test_the_user_and_group_tools_exist_only_in_write_mode(
 ) -> None:
     async with Client(FakeServer(tmp_path).mcp) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
-    destructive = {"delete_user", "delete_group"}
+    destructive = {"delete_user", "delete_group", "block_group"}
     for name in tools_users.TOOLS:
         annotations = tools[name].annotations
         assert annotations.read_only_hint is False, name
@@ -1997,7 +2011,7 @@ async def test_the_own_group_is_recognised_in_any_letter_case(tmp_path: Path) ->
     server = FakeServer(tmp_path)
     server.users["openvpn"]["group"] = "Staff"
     with pytest.raises(ToolError) as error:
-        await server.call("update_group", {"name": "staff", "deny": True})
+        await server.call("block_group", {"names": ["staff"]})
     assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
     assert server.written() == []
 
@@ -2012,7 +2026,7 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
         for name, tool in tools.items()
         if tool.annotations.read_only_hint is False and name != "login"
     ]
-    assert len(flow) == 17
+    assert len(flow) == 18
     for name in flow:
         description = tools[name].description
         assert "unknown_after_timeout" in description, name
@@ -2229,3 +2243,100 @@ async def test_a_delete_is_done_also_when_the_restart_time_cannot_be_read(
     result = await server.call("delete_group", {"name": "staff"})
     assert only(result)["outcome"] == "done" and "staff" not in server.groups
     assert "is not noted" in caplog.text
+
+
+# --- block_group ------------------------------------------------------------------
+
+
+async def test_blocking_the_group_of_the_own_account_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.users["openvpn"]["group"] = "staff"
+    server.connect("alice")
+    with pytest.raises(ToolError) as error:
+        await server.call("block_group", {"names": ["staff"]})
+    assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert server.written() == []
+    assert server.audit()[-1]["outcome"] == "refused_lockout"
+
+
+async def test_update_group_deny_true_points_to_block_group(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call("update_group", {"name": "staff", "deny": True})
+    assert str(error.value) == MSG_USE_BLOCK_GROUP
+    assert server.written() == []
+    result = await server.call("update_group", {"name": "staff", "deny": False})
+    assert only(result)["outcome"] == "done"
+
+
+async def test_block_group_is_allowed_in_automatic_mode(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    server.connect("alice")
+    result = await server.call("block_group", {"names": ["staff"]}, answer="none")
+    assert only(result)["outcome"] == "done"
+    assert result["approval"] == "auto"
+    assert server.sessions == []
+
+
+async def test_a_member_that_stays_connected_is_a_partial_result(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    server.deaf.add("alice")
+    result = await server.call("block_group", {"names": ["staff"]})
+    item = only(result)
+    assert item["outcome"] == "partial"
+    assert item["detail"] == (
+        f"{MSG_STILL_CONNECTED} for: alice (done: deny set, disconnected alice)"
+    )
+
+
+async def test_a_failed_disconnect_is_a_partial_result_that_names_who_is_left(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["dave"] = {"own": {}, "group": "staff"}
+    server.connect("alice")
+    server.connect("dave", 1)
+    server.fail[DISCONNECT] = [None, httpx.Response(500, json={"reason": "busy"})]
+    result = await server.call("block_group", {"names": ["staff"]})
+    item = only(result)
+    assert item["outcome"] == "partial"
+    assert "Call disconnect_vpn_sessions for: dave" in item["detail"]
+    assert item["detail"].endswith("(done: deny set, disconnected alice)")
+    assert server.value("staff", "deny") is True
+
+
+async def test_a_group_blocked_already_still_disconnects_its_members(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["alice"]["group"] = "blocked"
+    server.connect("alice")
+    seen: list[str] = []
+    result = await server.call("block_group", {"names": ["blocked"]}, seen=seen)
+    assert only(result)["disconnected"] == ["alice"]
+    lines = seen[0].splitlines()
+    assert "    deny: true -> true" in lines
+    assert "    also: the group is blocked already" in lines
+    assert server.sessions == []
+
+
+async def test_a_group_with_no_connected_member_disconnects_nobody(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    result = await server.call("block_group", {"names": ["staff"]}, seen=seen)
+    assert only(result)["disconnected"] == []
+    assert "    also: no blocked member is connected now" in seen[0].splitlines()
+    assert server.written() == [SET]
+
+
+async def test_a_user_name_is_refused_as_a_group(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call("block_group", {"names": ["alice"]})
+    assert str(error.value) == "alice is a user, not a group."
+    assert server.written() == []

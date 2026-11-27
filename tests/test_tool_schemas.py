@@ -53,7 +53,8 @@ EXPECTED_HINTS = {
     ("create_group", "name"): ["128", "existing user or group"],
     ("create_group", "deny"): ["every member"],
     ("update_group", "name"): ["case-sensitive", "not a user"],
-    ("update_group", "deny"): ["stay connected"],
+    ("update_group", "deny"): ["block_group"],
+    ("block_group", "names"): ["case-sensitive"],
     ("delete_group", "name"): ["case-sensitive"],
 }
 

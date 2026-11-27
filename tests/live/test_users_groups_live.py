@@ -20,6 +20,7 @@ from as_mcp_server.texts import (
     MSG_CANCELLED,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
+    MSG_USE_BLOCK_GROUP,
     WARN_FRESH_GROUP,
     WARN_OWN_MFA,
     WARN_RECONNECT,
@@ -416,7 +417,7 @@ async def test_a_generated_password_signs_in_and_a_deleted_user_is_disconnected(
     assert again.wait_exited(30) and again.refused()
 
 
-async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_session(
+async def test_a_block_through_a_move_or_a_reset_names_the_user_and_leaves_the_session(
     scratch,
 ) -> None:
     require_client_image()
@@ -428,21 +429,14 @@ async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_s
     await scratch.call("update_user", {"usernames": [name], "group": group})
     line = MSG_NOT_DISCONNECTED.format(name=name)
 
-    seen: list[str] = []
-    result = await scratch.call(
-        "update_group", {"name": group, "deny": True}, seen=seen
-    )
-    (item,) = result["items"]
-    assert item["outcome"] == "done" and item["warnings"] == [line]
-    assert f"also: {line}" in seen[0]
-    await asyncio.sleep(8)
-    assert client.running() and len(await scratch.sessions(name)) == 1  # measured
+    # update_group does not block a group any more; block_group does.
+    with pytest.raises(ToolError) as error:
+        await scratch.call("update_group", {"name": group, "deny": True})
+    assert str(error.value) == MSG_USE_BLOCK_GROUP
 
-    # The same through a move: unblock the group, then move the connected user
-    # into a second group that is blocked.
-    await scratch.call("update_group", {"name": group, "deny": False})
+    # Through a move: the connected user goes into a second group that is blocked.
     await scratch.call("create_group", {"name": scratch.group2, "deny": True})
-    seen.clear()
+    seen: list[str] = []
     result = await scratch.call(
         "update_user", {"usernames": [name], "group": scratch.group2}, seen=seen
     )
@@ -470,6 +464,45 @@ async def test_a_block_through_a_group_names_the_connected_user_and_leaves_the_s
 
     gone = await scratch.call("disconnect_vpn_sessions", {"usernames": [name]})
     assert gone["items"][0]["disconnected"] == 1 and client.wait_exited()
+
+
+async def test_block_group_disconnects_the_members_it_blocks(scratch) -> None:
+    require_client_image()
+    plain, own_false, group = scratch.user, scratch.other, scratch.group
+    await scratch.call(
+        "create_user", {"users": [{"username": plain}, {"username": own_false}]}
+    )
+    await scratch.call(
+        "update_user", {"usernames": [plain, own_false], "autologin": True}
+    )
+    await scratch.call("update_user", {"usernames": [own_false], "deny": False})
+    # Members of a group created since the last restart cannot connect, so the
+    # clients connect first and the users join the group afterwards.
+    first = await scratch.connect(plain, await scratch.autologin_profile(plain))
+    second = await scratch.connect(
+        own_false, await scratch.autologin_profile(own_false)
+    )
+    await scratch.call("create_group", {"name": group})
+    await scratch.call("update_user", {"usernames": [plain, own_false], "group": group})
+
+    seen: list[str] = []
+    result = await scratch.call("block_group", {"names": [group]}, seen=seen)
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert item["disconnected"] == [plain]
+    assert item["after"]["deny"] is True
+    lines = seen[0].splitlines()
+    assert f"    also: disconnects the VPN sessions of 1 member(s): {plain}" in lines
+    assert (
+        f"    also: not blocked, because they set deny=false themselves: {own_false}"
+    ) in lines
+    assert first.wait_exited(), first.log()[-600:]
+    assert await scratch.sessions(plain) == []
+    await asyncio.sleep(6)
+    assert second.running() and len(await scratch.sessions(own_false)) == 1
+    assert (await scratch.user_record(plain))["deny"]["value"] is True
+    assert (await scratch.user_record(own_false))["deny"]["value"] is False
+    assert [line["tool"] for line in scratch.live.audit()][-1] == "block_group"
 
 
 async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -> None:

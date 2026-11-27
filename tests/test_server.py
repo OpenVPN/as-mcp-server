@@ -484,5 +484,6 @@ async def test_write_mode_adds_exactly_the_write_tools_built_so_far(
         "delete_access_rulesets",
         "assign_access_ruleset",
         "modify_access_rules",
+        "block_group",
     }
     assert names >= EXPECTED_TOOLS
