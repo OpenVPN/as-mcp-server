@@ -862,9 +862,17 @@ async def test_the_support_report_goes_to_a_file_and_not_into_the_result(
     if sys.platform != "win32":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert seen == []  # nobody is asked to approve a read
-    assert server.audit() == []
+    (line,) = server.audit()
+    assert line["tool"] == "create_support_report"
+    assert line["target"] == "support report"
+    assert line["outcome"] == "applied"
+    assert line["approval"] == "none"
+    assert line["after"] == {"path": str(path), "size_bytes": result["size_bytes"]}
+    assert line["server_version"] and line["error"] is None
+    audit_text = (tmp_path / "audit.jsonl").read_text("utf-8")
+    assert "MARKER" not in audit_text and "Support summary" not in audit_text
     asked = {(r.method, r.url.path) for r in server.router.requests}
-    assert asked == {LOGIN, REPORT}
+    assert asked == {LOGIN, ("GET", "/api/server/info"), REPORT}
 
 
 async def test_the_support_report_is_given_five_minutes(tmp_path: Path) -> None:
@@ -901,9 +909,19 @@ async def test_the_report_is_not_asked_for_when_it_could_not_be_saved(
 
 async def test_a_failed_support_report_leaves_no_file(tmp_path: Path) -> None:
     server = report_server(tmp_path, httpx.Response(500, json={"detail": "boom"}))
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError) as error:
         await server.call("create_support_report", {})
     assert saved(tmp_path) == []
+    (line,) = server.audit()
+    assert line["outcome"] == "failed" and line["error"] == str(error.value)
+    assert line["after"] is None
+
+
+async def test_every_support_report_leaves_one_audit_line(tmp_path: Path) -> None:
+    server = report_server(tmp_path)
+    await server.call("create_support_report", {})
+    await server.call("create_support_report", {})
+    assert [line["outcome"] for line in server.audit()] == ["applied", "applied"]
 
 
 @pytest.mark.parametrize("body", ["", " \n\t\n"])

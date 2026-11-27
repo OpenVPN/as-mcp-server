@@ -10,6 +10,7 @@ time answers 404, so "is it gone" is always asked with a short wait.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any
@@ -18,6 +19,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
+from as_mcp_server.audit import AuditError
 from as_mcp_server.client import AccessServerClient, NotFoundError
 from as_mcp_server.effective import snapshot
 from as_mcp_server.guards import Effect, newly_denied
@@ -30,6 +32,7 @@ from as_mcp_server.texts import (
     MSG_ONE_TARGET,
 )
 from as_mcp_server.tools import READ
+from as_mcp_server.versions import version_status
 from as_mcp_server.writes import (
     DESTRUCTIVE,
     MAX_ITEMS,
@@ -43,6 +46,7 @@ from as_mcp_server.writes import (
     run_write,
 )
 
+log = logging.getLogger(__name__)
 TOOLS = ("block_user", "disconnect_vpn_sessions", "create_support_report")
 # Access Server runs diagnostic programs to build the report.
 REPORT_TIMEOUT = 300.0
@@ -507,16 +511,40 @@ def register_session_tools(mcp: FastMCP, deps: WriteDeps) -> None:
     async def create_support_report() -> dict[str, Any]:
         directory = deps.holder.settings.resolved_output_dir()
         probe_output_dir(directory)
-        text = await deps.holder.get().get_text(
-            "/support/report", timeout=REPORT_TIMEOUT
-        )
-        if not text.strip():
-            raise ToolError(MSG_EMPTY_REPORT)
-        path = write_secret_file(
-            directory, "support-report", "access-server", "txt", text
-        )
-        return {
-            "path": str(path),
-            "size_bytes": path.stat().st_size,
-            "reminder": DELIVERY_REMINDER,
-        }
+        deps.audit.probe()
+        client = deps.holder.get()
+        info = await client.get("/server/info")
+        version = str(info.get("version", "")) if isinstance(info, dict) else ""
+
+        def audit(outcome: Any, after: Any = None, error: str | None = None) -> None:
+            # One line per report, so that repeated calls can be seen.
+            try:
+                deps.audit.append(
+                    tool="create_support_report",
+                    target="support report",
+                    outcome=outcome,
+                    approval="none",
+                    server_url=client.config.url,
+                    server_version=version,
+                    version_tested=version_status(version) == "tested",
+                    admin_user=client.config.username,
+                    before=None,
+                    after=after,
+                    error=error,
+                )
+            except AuditError as exc:
+                log.error("%s", exc)
+
+        try:
+            text = await client.get_text("/support/report", timeout=REPORT_TIMEOUT)
+            if not text.strip():
+                raise ToolError(MSG_EMPTY_REPORT)
+            path = write_secret_file(
+                directory, "support-report", "access-server", "txt", text
+            )
+        except ToolError as exc:
+            audit("failed", error=str(exc))
+            raise
+        size = path.stat().st_size
+        audit("applied", after={"path": str(path), "size_bytes": size})
+        return {"path": str(path), "size_bytes": size, "reminder": DELIVERY_REMINDER}
