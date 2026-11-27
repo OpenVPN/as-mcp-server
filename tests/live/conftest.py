@@ -31,7 +31,8 @@ def pytest_collection_modifyitems(
         reason="live tests need OPENVPN_AS_LIVE=1 and the dev stand (make live)"
     )
     skip_slow = pytest.mark.skip(
-        reason="needs OPENVPN_AS_LIVE_SLOW=1; waits ~11 minutes for a real token expiry"
+        reason="needs OPENVPN_AS_LIVE_SLOW=1; "
+        "waits minutes (a token expiry, warm restarts)"
     )
     for item in items:
         if "tests/live" not in str(item.fspath).replace("\\", "/"):

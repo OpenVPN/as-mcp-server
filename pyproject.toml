@@ -57,4 +57,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = ["slow: needs OPENVPN_AS_LIVE_SLOW=1, waits on a real token expiry"]
+markers = ["slow: needs OPENVPN_AS_LIVE_SLOW=1, waits minutes (a real token expiry, warm restarts)"]

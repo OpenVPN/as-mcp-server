@@ -19,7 +19,7 @@ test:               ## unit tests (no network)
 
 check: lint fmt-check test   ## everything that must be green before a commit
 
-live-slow:          ## live tests including the ~11 min real token expiry (dev/README.md)
+live-slow:          ## live tests including the slow ones: token expiry, warm restarts (dev/README.md)
 	OPENVPN_AS_LIVE=1 OPENVPN_AS_LIVE_SLOW=1 $(UV) pytest tests/live -v
 
 live:               ## tests against the Docker dev stand (dev/README.md)

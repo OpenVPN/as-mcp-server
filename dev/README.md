@@ -387,6 +387,13 @@ checks that the background renewal kept the session alive without a second code,
 minutes per server. Keep the machine awake meanwhile (`caffeinate -i make live-slow` on
 macOS); a sleeping laptop stops the renewal timer and the test fails for that reason alone.
 
+Access lists with traffic: `make live-slow` also runs
+`tests/live/test_access_live.py::test_a_deny_for_one_host_in_front_of_an_allow_blocks_only_that_host`.
+It writes `allow 10.77.0.0/24` and `deny 10.77.0.10` for a throwaway user through
+`modify_access_list`, makes a warm restart, waits 75 seconds and checks from an OpenVPN client
+that T1 is blocked and T2 is reachable; then it removes both, restarts again and checks that
+neither is reachable. About 4 minutes per server.
+
 ## Agent evals: does a real agent follow the server instructions?
 
 Unit tests prove what the tools return; they cannot prove what an agent does with it. After a
