@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Literal
 
 from as_mcp_server import __version__
-from as_mcp_server.texts import MSG_UNTESTED
+from as_mcp_server.texts import MSG_UNTESTED, MSG_UNTESTED_REFUSED
 
 MINIMUM_VERSION = (3, 1)
 TESTED_MINORS = frozenset({(3, 1), (3, 2)})
@@ -40,10 +40,18 @@ def below_minimum_version(version: str) -> bool:
     return minor is None or minor < MINIMUM_VERSION
 
 
-def untested_warning(version: str) -> str:
+def _minors(version: str) -> dict[str, str]:
     server = parse_minor(version)
     mcp = parse_minor(__version__)
-    return MSG_UNTESTED.format(
-        server=f"{server[0]}.{server[1]}" if server else version,
-        mcp=f"{mcp[0]}.{mcp[1]}" if mcp else __version__,
-    )
+    return {
+        "server": f"{server[0]}.{server[1]}" if server else version,
+        "mcp": f"{mcp[0]}.{mcp[1]}" if mcp else __version__,
+    }
+
+
+def untested_warning(version: str) -> str:
+    return MSG_UNTESTED.format(**_minors(version))
+
+
+def untested_refusal(version: str) -> str:
+    return MSG_UNTESTED_REFUSED.format(**_minors(version))

@@ -76,3 +76,68 @@ NOTE_IPV6_ACCESS = "IPv6 access lists are not returned by the API."
 NOTE_ACCESS_LISTS = f"{NOTE_GLOBAL_IP} {NOTE_IPV6_ACCESS}"
 CLIENT_REASON = "Disconnected by your administrator."
 DEFAULT_REASON = "Disconnected through as-mcp-server"
+MSG_USE_BLOCK_GROUP = (
+    "Refused: use block_group to block a group; it also disconnects the members' "
+    "sessions."
+)
+AUTO_ACCESS = (
+    "access rules and access lists are changed only after the approval question"
+)
+AUTO_PASSWORD = "a password is reset only after the approval question"
+AUTO_MFA = "MFA is reset only after the approval question"
+MSG_UNTESTED_REFUSED = (
+    "Refused: Access Server {server} is not on the tested list of as-mcp-server "
+    "{mcp}, and access lists are changed only on tested versions. Make the change in "
+    "the Admin UI."
+)
+NOTE_ACCESS_LIST_RESTART = (
+    "Saved. Access Server applies a changed access list only after a warm restart, "
+    "which may briefly reconnect some users. Until then the old list applies. Ask "
+    "the administrator before calling warm_restart."
+)
+NOTE_DOMAIN_RULES = (
+    "Saved. Domain rules apply without a restart, from the next connection of a user. "
+    "They act on names that the device looks up through the DNS of the VPN; the "
+    "address of the host itself is not opened."
+)
+NOTE_DOMAIN_DENY = (
+    "A domain rule with the action deny acts on the name only: it does not block the "
+    "address of the host, and an access list that allows the address still lets the "
+    "traffic through. To block an address, change the access list."
+)
+MSG_LAST_OWNER = (
+    "Refused: rule set {id} would have no owner left, and Access Server does not list "
+    "such a rule set. Use delete_access_rulesets to remove it."
+)
+MSG_NO_SUCH_RULESET = "Refused: there is no rule set with id {id}."
+MSG_DUPLICATE_ENTRY = "Refused: the access list of {owner} already has {entry}."
+MSG_CONFLICT_ENTRY = (
+    "Refused: the access list of {owner} already has {entry} with the opposite "
+    "action. Remove it in the same call if the new entry should replace it."
+)
+MSG_NOT_WRITABLE = (
+    "Refused: the access list of {owner} holds {entry}, which the Web API cannot "
+    "write back, and this change would have to rewrite it. Make the change in the "
+    "Admin UI."
+)
+MSG_NO_SUCH_ENTRY = "Refused: the access list of {owner} has no entry {entry}."
+WARN_HIDDEN = (
+    "{entry} has no effect: {earlier} comes first and matches the same traffic."
+)
+MSG_NO_ACCESS_CHANGE = (
+    "Refused: nothing to change. Give at least one entry to add or to remove."
+)
+MSG_GROUP_AND_REMOVE = "Refused: give group or remove_from_group, not both."
+MSG_IN_NO_GROUP = "Refused: {name} is in no group."
+MSG_NO_MFA_TO_RESET = (
+    "Refused: {name} has not set up MFA, so there is nothing to reset."
+)
+MSG_MFA_NOT_ALLOWED = (
+    "Refused: {name} signs in with {method}, which has no MFA of Access Server to "
+    "reset."
+)
+# Measured on 3.1.0 and 3.2.4 (dev/README.md).
+NOTE_PASSWORD_RESET = (
+    "The old password stops working at once; a VPN session of the user stays connected."
+)
+NOTE_MFA_RESET = "The user sets up MFA again at the next sign-in."

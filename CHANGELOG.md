@@ -5,7 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - unreleased
+
+### Added
+
 ## [0.2.0] - unreleased
+
+Not published on PyPI; its content ships in 0.3.0.
 
 Write mode: an administrator can let the agent change users, groups, connection profiles
 and sessions. It is off by default, and every change is shown for approval first.

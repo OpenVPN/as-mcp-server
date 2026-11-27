@@ -56,7 +56,11 @@ from as_mcp_server.texts import (
     MSG_NO_ELICITATION,
     WARN_OWN_MFA,
 )
-from as_mcp_server.versions import untested_warning, version_status
+from as_mcp_server.versions import (
+    untested_refusal,
+    untested_warning,
+    version_status,
+)
 
 log = logging.getLogger(__name__)
 
@@ -194,6 +198,8 @@ class Plan:
     # A whole refusal for automatic mode, when "repeat it with a prompt" is the
     # wrong advice.
     auto_message: str | None = None
+    # A lockout of the own account that only the tool can see (its password or MFA).
+    lockout: str | None = None
 
 
 class Partial(Exception):
@@ -219,8 +225,9 @@ class WriteOp[Item](Protocol):
     note: str
     needs_output_dir: bool
 
-    # Optional: `always_ask = True` asks for approval in automatic mode too, and
-    # `msg_no_elicitation` replaces the answer for an app that cannot ask.
+    # Optional: `always_ask = True` asks for approval in automatic mode too,
+    # `msg_no_elicitation` replaces the answer for an app that cannot ask, and
+    # `refuse_untested = True` refuses an untested Access Server minor.
 
     def key(self, item: Item) -> str:
         """Casefolded identity of the item: for duplicates."""
@@ -510,6 +517,8 @@ async def run_write[Item](
         run.version_tested = status == "tested"
         if status == "unsupported":
             raise ToolError(MSG_OLD_SERVER.format(version=clean(version) or "none"))
+        if status == "untested" and getattr(op, "refuse_untested", False):
+            raise ToolError(untested_refusal(version))
         warnings = [untested_warning(version)] if status == "untested" else []
         if op.needs_output_dir:
             probe_output_dir(settings.resolved_output_dir())
@@ -531,7 +540,9 @@ async def run_write[Item](
 
     # 5. Guards over everything the call would do.
     effects = [effect for plan in plans for effect in plan.effects]
-    reason = lockout_reason(own.name, own.group, effects)
+    reason = lockout_reason(own.name, own.group, effects) or next(
+        (plan.lockout for plan in plans if plan.lockout), None
+    )
     if reason is not None:
         raise run.refuse(
             rows,

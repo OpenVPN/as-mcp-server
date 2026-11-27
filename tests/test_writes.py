@@ -32,6 +32,7 @@ from as_mcp_server.texts import (
     MSG_LOCKOUT,
     MSG_NO_ELICITATION,
 )
+from as_mcp_server.versions import untested_refusal
 from as_mcp_server.writes import (
     MAX_ITEMS,
     MSG_EARLIER_ITEMS_WRITTEN,
@@ -149,6 +150,7 @@ class FakeOp:
             PreviewItem(item["name"], changes),
             effects,
             auto_reason=item.get("auto_reason"),
+            lockout=item.get("lockout"),
         )
 
     async def apply(
@@ -604,6 +606,29 @@ async def test_an_untested_server_version_warns_in_preview_result_and_audit(
     assert line["version_tested"] is False and line["server_version"] == "3.3.0"
 
 
+@pytest.mark.parametrize("mode", ["prompt", "auto"])
+async def test_an_op_that_refuses_untested_minors_writes_nothing_on_3_3(
+    tmp_path: Path, mode: str
+) -> None:
+    stand = Stand(tmp_path, mode=mode, version="3.3.0")
+    stand.op.refuse_untested = True
+    seen: list[str] = []
+    with pytest.raises(ToolError) as refused:
+        await stand.call(to(2, "a"), seen=seen)
+    assert str(refused.value) == untested_refusal("3.3.0")
+    assert seen == [] and stand.op.events == []
+    (line,) = stand.audit()
+    assert line["outcome"] == "failed" and line["version_tested"] is False
+
+
+async def test_an_op_that_refuses_untested_minors_writes_on_a_tested_one(
+    tmp_path: Path,
+) -> None:
+    stand = Stand(tmp_path)
+    stand.op.refuse_untested = True
+    assert outcomes(await stand.call(to(2, "a"))) == ["done"]
+
+
 async def test_two_parallel_writes_do_not_interleave(tmp_path: Path) -> None:
     stand = Stand(tmp_path, mode="auto")
     stand.op.slow = 0.02
@@ -640,6 +665,23 @@ async def test_an_item_with_an_auto_reason_is_refused_in_auto_and_allowed_with_a
     assert [line["outcome"] for line in auto.audit()] == ["refused_auto_limit"]
     prompt = Stand(tmp_path / "prompt")
     assert outcomes(await prompt.call(items)) == ["done"]
+
+
+@pytest.mark.parametrize("mode", ["prompt", "auto"])
+async def test_a_plan_lockout_refuses_in_every_mode_before_the_question(
+    tmp_path: Path, mode: str
+) -> None:
+    """A lockout only the tool can see, such as a new password of the own account."""
+    stand = Stand(tmp_path, mode=mode)
+    items = [*to(2, "a"), *to(2, "b", lockout="the own password would change")]
+    seen: list[str] = []
+    with pytest.raises(ToolError) as refused:
+        await stand.call(items, seen=seen)
+    assert str(refused.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert seen == [] and stand.op.applied == []
+    lines = stand.audit()
+    assert [line["outcome"] for line in lines] == ["refused_lockout"] * 2
+    assert {line["error"] for line in lines} == {"the own password would change"}
 
 
 async def test_auto_mode_refuses_what_needs_a_person(tmp_path: Path) -> None:
@@ -978,6 +1020,80 @@ def test_the_fixed_texts_are_the_ones_agreed_in_the_design() -> None:
     assert texts.DEFAULT_REASON == "Disconnected through as-mcp-server"
     assert texts.CLIENT_REASON == "Disconnected by your administrator."
     assert texts.MSG_ONE_TARGET == "Give exactly one of {a} or {b}."
+
+
+def test_the_fixed_texts_of_0_3_0_are_the_ones_in_the_plan() -> None:
+    assert texts.MSG_USE_BLOCK_GROUP == (
+        "Refused: use block_group to block a group; it also disconnects the members' "
+        "sessions."
+    )
+    assert texts.AUTO_ACCESS == (
+        "access rules and access lists are changed only after the approval question"
+    )
+    assert texts.AUTO_PASSWORD == "a password is reset only after the approval question"
+    assert texts.AUTO_MFA == "MFA is reset only after the approval question"
+    assert texts.MSG_UNTESTED_REFUSED == (
+        "Refused: Access Server {server} is not on the tested list of as-mcp-server "
+        "{mcp}, and access lists are changed only on tested versions. Make the change "
+        "in the Admin UI."
+    )
+    assert texts.NOTE_ACCESS_LIST_RESTART == (
+        "Saved. Access Server applies a changed access list only after a warm "
+        "restart, which may briefly reconnect some users. Until then the old list "
+        "applies. Ask the administrator before calling warm_restart."
+    )
+    assert texts.NOTE_DOMAIN_RULES == (
+        "Saved. Domain rules apply without a restart, from the next connection of a "
+        "user. They act on names that the device looks up through the DNS of the "
+        "VPN; the address of the host itself is not opened."
+    )
+    assert texts.NOTE_DOMAIN_DENY == (
+        "A domain rule with the action deny acts on the name only: it does not block "
+        "the address of the host, and an access list that allows the address still "
+        "lets the traffic through. To block an address, change the access list."
+    )
+    assert texts.MSG_LAST_OWNER == (
+        "Refused: rule set {id} would have no owner left, and Access Server does not "
+        "list such a rule set. Use delete_access_rulesets to remove it."
+    )
+    assert texts.MSG_DUPLICATE_ENTRY == (
+        "Refused: the access list of {owner} already has {entry}."
+    )
+    assert texts.MSG_CONFLICT_ENTRY == (
+        "Refused: the access list of {owner} already has {entry} with the opposite "
+        "action. Remove it in the same call if the new entry should replace it."
+    )
+    assert texts.MSG_NOT_WRITABLE == (
+        "Refused: the access list of {owner} holds {entry}, which the Web API cannot "
+        "write back, and this change would have to rewrite it. Make the change in "
+        "the Admin UI."
+    )
+    assert texts.MSG_NO_SUCH_ENTRY == (
+        "Refused: the access list of {owner} has no entry {entry}."
+    )
+    assert texts.WARN_HIDDEN == (
+        "{entry} has no effect: {earlier} comes first and matches the same traffic."
+    )
+    assert texts.MSG_GROUP_AND_REMOVE == (
+        "Refused: give group or remove_from_group, not both."
+    )
+    assert texts.MSG_IN_NO_GROUP == "Refused: {name} is in no group."
+    assert texts.MSG_NO_ACCESS_CHANGE == (
+        "Refused: nothing to change. Give at least one entry to add or to remove."
+    )
+    assert texts.MSG_NO_MFA_TO_RESET == (
+        "Refused: {name} has not set up MFA, so there is nothing to reset."
+    )
+    assert texts.MSG_MFA_NOT_ALLOWED == (
+        "Refused: {name} signs in with {method}, which has no MFA of Access Server to "
+        "reset."
+    )
+    assert texts.NOTE_PASSWORD_RESET == (
+        "The old password stops working at once; a VPN session of the user stays "
+        "connected."
+    )
+    assert texts.NOTE_MFA_RESET == "The user sets up MFA again at the next sign-in."
+    assert texts.MSG_NO_SUCH_RULESET == "Refused: there is no rule set with id {id}."
 
 
 async def test_a_late_answer_is_refused_in_plain_words_and_audited(
