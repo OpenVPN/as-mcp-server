@@ -34,7 +34,16 @@ question in a real app. This checklist does. Fill one table per release.
 | 11b | "Restart the server" with `OPENVPN_AS_APPROVAL=auto` | The question is still shown. In an app that cannot show it: "Refused: a warm restart always needs the administrator's approval, ..." word for word, no restart. |
 | 12 | Ask for a change, then change the same user in the Admin UI before you answer yes | "Changed on the server since the preview; nothing was written." word for word. The agent does not run the request again by itself. |
 | 13 | "Create a support report" | No question. A path and a size; no report text in the conversation. |
-| 14 | Clean up: delete `qa-u1`, `qa-g1` and the files in the output folder | - |
+| 14 | "Let qa-u1 reach 10.77.0.0/24" (any network behind your server) and approve | The question shows `order after the change:` and `takes effect only after a warm restart`. Afterwards the agent says a warm restart is needed and asks; it does not call `warm_restart` by itself. |
+| 15 | "Deny qa-u1 the host 10.77.0.10" and approve | The question says the deny goes `in front of` the allow, and the order lists the deny first. |
+| 16 | "Create a rule set qa-rs1 for qa-u1", then "In qa-rs1 send intranet.example.com through the VPN by nat", then the same with deny | Each question names the rule set; the rule reads `nat intranet.example.com and its subdomains`. For deny the question says a domain rule with deny does not block the address, and the agent says so too. |
+| 17 | Connect a VPN client as a member of qa-g1, then "Block group qa-g1" and approve | The question names the member whose session is ended; the client drops. "Block qa-g1 with update_group": refused, the agent uses `block_group`. |
+| 18 | "Give qa-u1 a new password" and approve | A file path and no password in the conversation; the old password stops working at once. |
+| 19 | After qa-u1 has set up MFA: "Reset the MFA of qa-u1" and approve | No secret anywhere (answer, files, `audit.jsonl`); the next sign-in of qa-u1 asks to set up MFA. |
+| 20 | With `OPENVPN_AS_APPROVAL=auto`: "Give qa-u1 a new password", then "Let qa-u1 reach 10.77.0.0/24" | Each refused: "Refused in automatic approval mode: ..." relayed word for word; nothing changes. |
+| 21 | "Create a rule set named `**bold** [link](https://example.com)` for qa-u1" | Look at the question: is the name shown as typed, or rendered as bold text and a link? Note what the app shows (S5). Decline. |
+| 22 | Connect a VPN client as qa-u1, then "Move qa-u1 and qa-u2 to group staff" | The third line of the question is `1 of 2 items need attention`, then a `Warning: qa-u1: ...` line. |
+| 23 | Clean up: delete `qa-u1`, `qa-u2`, `qa-g1`, `qa-rs1` and the files in the output folder | - |
 
 Windows only: the files in the output folder are readable by your user and by administrators
 of the machine, not by other users.
@@ -44,11 +53,13 @@ of the machine, not by other users.
 Required for a release: Claude Code (interactive), Claude Desktop, Codex. Optional: Cursor,
 VS Code, OpenCode. Write the check numbers that failed, or "all".
 
-Claude Desktop does not show the approval question, so only checks 6, 7, 8 and 13 are
+Claude Desktop does not show the approval question, so only checks 6, 7, 8, 13 and 20 are
 required for it; the other checks need the question (11b: the refusal). It also rewords refusals (checks 7 and
 8): a known limit, the texts were left as they are.
 
-### 0.2.0
+### 0.3.0
+
+0.2.0 was not published and its manual checks were never run; they are checks 1 to 13 here.
 
 | App | Version | OS | Access Server | Date | Tester | Result |
 | --- | --- | --- | --- | --- | --- | --- |

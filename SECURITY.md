@@ -31,7 +31,8 @@ scope, as for every local tool.
 ## Write mode
 
 Write mode (`OPENVPN_AS_WRITE_TOOLS=true`, off by default) lets the agent change users,
-groups, connection profiles and sessions. What protects the server then:
+groups, passwords and MFA, connection profiles, sessions, access lists and domain rules. What
+protects the server then:
 
 - **A person approves every change.** The server builds the approval text itself from the
   state it read (the server, the action, every target, `before -> after`, side effects) and
@@ -44,20 +45,25 @@ groups, connection profiles and sessions. What protects the server then:
 - **`OPENVPN_AS_APPROVAL=auto` removes the person.** It is meant for automation the
   administrator trusts. It is limited in code: no administrator rights are given, MFA is not
   switched off, no authentication method is changed, autologin is not switched on, no
-  autologin profile or link is created, and a change whose result cannot be computed is
-  refused. Deleting a group is refused when a member would lose MFA, a block or its
+  autologin profile or link is created, no access list, rule set or domain rule is changed,
+  no password or MFA is reset, and a change whose result cannot be computed is refused. Deleting a group is refused when a member would lose MFA, a block or its
   authentication method with it. Everything else, including other deletes and blocks, is
   done without a question. That has a consequence: deleting a user and creating it again
   gives a user without the old MFA enrollment. Do not combine `auto` with an agent that
   reads untrusted text.
 - **The account the server signs in with cannot be locked out** in either mode: not blocked,
-  deleted, demoted, moved or switched to another authentication method, also not through its
-  group.
+  deleted, demoted, moved or taken out of its group, switched to another authentication
+  method, given a new password or an MFA reset, also not through its group (which cannot be
+  blocked or deleted either).
 - **Secrets never reach the model through a tool result.** Profile contents and their private
   keys, download links, generated passwords and the support report are written to files in
   `OPENVPN_AS_OUTPUT_DIR` (folder `0700` when the server creates it, files `0600`, never
   through a symbolic link, never over an existing file); results, approval texts, the audit
-  log and the process log hold the path only. A password is never a tool parameter. This
+  log and the process log hold the path only. A password is never a tool parameter; a reset
+  password is generated and goes to a file like the password of a new user. An MFA reset never
+  keeps the new secret: the answer of Access Server is dropped unread, and the user sets up
+  MFA again at the next sign-in. Access Server creates a user record for an unknown name on an
+  MFA reset, so the server reads the user first and refuses a name without a record. This
   covers tool results only: an agent with file tools (Claude Code, Codex) can read the output
   folder like any other file of the user. Point `OPENVPN_AS_OUTPUT_DIR` outside the folders
   the agent works in, and delete a file once it has been delivered. On Windows the files rely
@@ -70,15 +76,17 @@ groups, connection profiles and sessions. What protects the server then:
   item for every change the server tried, refused or saw cancelled, also when the tool call
   is interrupted while the change is being written: time, tool, target, outcome, approval
   mode, server, administrator, state before and after. Known secret keys are redacted. When
-  the line cannot be written before the change, the change is not made. Not recorded: a call
-  turned down for its arguments alone, before any check (nothing was read or written), and
-  `create_support_report`, which changes nothing. The file is local, is not rotated and is
-  not protected against the user who owns it.
+  the line cannot be written before the change, the change is not made.
+  `create_support_report` changes nothing and gets one line per report too. Not recorded: a
+  call turned down for its arguments alone, before any check (nothing was read or written).
+  The file is local, is not rotated and is not protected against the user who owns it.
 - **The server never repeats a write.** A request that times out is reported with the state
   read afterwards, and later items of the same list are not attempted.
 
-Known gaps: blocking a group or moving a user into a blocked group does not disconnect
-running sessions (the tools name them); an Access Server version newer than the tested
+Known gaps: moving a user into a blocked group, or a reset of `deny`, does not disconnect
+running sessions (the tools name them; `block_user` and `block_group` do disconnect); a
+changed access list applies only after a warm restart, so the old list holds until then; a
+domain rule with `deny` acts on the name only and does not block the address; an Access Server version newer than the tested
 ones is allowed with a warning; the approval text is plain text, and an app that renders
 it as Markdown or HTML may show a crafted name differently from what was written (a name that holds invisible
 characters or is cut is marked as such).

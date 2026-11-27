@@ -4,9 +4,10 @@ A local [MCP](https://modelcontextprotocol.io) server that lets your own AI agen
 Codex, Cursor, VS Code, OpenCode, Claude Desktop, ...) look at your **OpenVPN Access Server**
 through its Web API. By default it is **read-only**: it answers questions such as "is the VPN
 healthy", "who is connected", "who failed to log in today", "what can user X reach" and never
-changes anything on the server. Since 0.2.0 an administrator can switch on **write mode**
-(users, groups, connection profiles, block and disconnect), where every change is shown for
-approval first; see [Write mode](#write-mode).
+changes anything on the server. Since 0.3.0 an administrator can switch on **write mode**
+(users and groups, passwords and MFA resets, connection profiles, access lists and domain
+rules, block and disconnect), where every change is shown for approval first; see
+[Write mode](#write-mode).
 
 It runs on your machine, is started by your agent, and talks to Access Server with your own
 admin credentials. Nothing is hosted by anyone else.
@@ -43,7 +44,7 @@ them yourself.
    secret in this configuration.
 4. Ask the agent something: "Is my VPN healthy?" It will call `get_status_overview`.
 
-Pin a version if you want upgrades to be explicit: `uvx --python 3.13 as-mcp-server@0.2.0`. `uvx` keeps
+Pin a version if you want upgrades to be explicit: `uvx --python 3.13 as-mcp-server@0.3.0`. `uvx` keeps
 using the version it first cached until you pass `@latest` or run `uv cache clean`.
 
 Every command names the Python version (`--python 3.13`); uv downloads that Python itself if
@@ -194,7 +195,7 @@ are strings of digits (they are too large for a JSON number).
 
 ## Write mode
 
-Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers thirteen more tools:
+Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers twenty-one more tools:
 
 | Tool | What it does | Parameters |
 | --- | --- | --- |
@@ -202,15 +203,23 @@ Off by default. With `OPENVPN_AS_WRITE_TOOLS=true` the server registers thirteen
 | `create_profile_download_link` | Download link per user (called Token URL in Access Server; 1 to 5 uses), saved to a local file | `usernames`, `profile_type`, `lifetime_seconds`, `usages` |
 | `delete_connection_profiles` | Delete profiles by serial, or every profile of one user | `serials` or `username` |
 | `block_user` | Set `deny`, disconnect the user's sessions, check that none is left | `usernames` |
+| `block_group` | Set `deny` on groups, disconnect the members it blocks | `names` |
 | `disconnect_vpn_sessions` | Disconnect every session of users, or single sessions; does not block | `usernames` or `sessions`, `reason` |
 | `create_support_report` | Save the Access Server support report to a local file (a read; no approval) | - |
 | `create_user` | Create users; an optional generated password goes to a local file | `users`: `username`, `group`, `admin`, `auth_method`, `deny`, `generate_password` |
-| `update_user` | One change for a list of users; move to a group; reset fields to the inherited value | `usernames`, `deny`, `deny_web`, `admin`, `autologin`, `auth_method`, `group`, `totp`, `allow_password_change`, `allow_generate_profiles`, `reroute_gw`, `reset_to_inherited` |
+| `update_user` | One change for a list of users; move to a group or out of it; reset fields to the inherited value | `usernames`, `deny`, `deny_web`, `admin`, `autologin`, `auth_method`, `group`, `remove_from_group`, `totp`, `allow_password_change`, `allow_generate_profiles`, `reroute_gw`, `reset_to_inherited` |
+| `reset_user_password` | New generated password per user, saved to a local file | `usernames` |
+| `reset_user_mfa` | Reset MFA: the user sets it up again at the next sign-in; no secret is kept | `usernames` |
 | `delete_user` | Delete the user's profiles, the user, then disconnect the user's sessions | `usernames` |
 | `create_group` | Create a group | `name` and the group fields |
-| `update_group` | Change one group | `name`, the group fields, `reset_to_inherited` |
+| `update_group` | Change one group (to block it, use `block_group`) | `name`, the group fields, `reset_to_inherited` |
 | `delete_group` | Delete one group; its members stay as users | `name` |
 | `warm_restart` | Warm restart of Access Server; always asks for approval | - |
+| `modify_access_list` | Add or remove IPv4 access-list entries of one user or group; applies after a warm restart | `owner`, `add`, `remove` |
+| `save_access_ruleset` | Create a rule set of domain rules for users, groups or all users, or rename one | `name`, `comment`, `ruleset_id`, `owners`, `all_users`, `position` |
+| `assign_access_ruleset` | Give a rule set to users, groups or all users, move it, or take it away | `ruleset_id`, `owners`, `all_users`, `unassign`, `position` |
+| `modify_access_rules` | Add, change or delete the domain rules of one rule set | `ruleset_id`, `add`, `update`, `delete` |
+| `delete_access_rulesets` | Delete rule sets with their rules | `ids` |
 
 How to switch it on, for Claude Code:
 
@@ -240,7 +249,9 @@ most: the server, the action with the number of targets and the first three name
 session, cannot be undone, 1 warning`). For `update_user` and `update_group` the `Total:`
 line starts with the change itself: `Total: admin false -> true, autologin false -> true`
 for one target, `Total: changes admin, autologin for 3 users` for several. The full list of
-values (`field: before -> after`) comes after these lines. As tested for this release:
+values (`field: before -> after`) comes after these lines. When a question covers several
+targets and some of them need attention, the line after `Action:` says so (`2 of 5 items need
+attention`) and the warnings follow at once, before `Total:`. As tested for this release:
 
 - Claude Code 2.1.325 shows only the first three lines ("... (+N more lines)") and has no
   key to open the rest.
@@ -259,16 +270,20 @@ reported a cancelled change as done; `audit.jsonl` (below) says what really happ
 where you trust the agent and its inputs. Even then the server never: gives administrator
 rights, switches MFA off, changes an authentication method, creates a user with an
 authentication method other than the one it would inherit, switches autologin on, creates an
-autologin profile or link, switches MFA on for the account it signs in with itself, or makes
-a change whose result it cannot compute. These are
+autologin profile or link, switches MFA on for the account it signs in with itself, changes an
+access list, a rule set or a domain rule, resets a password or MFA, or makes a change whose
+result it cannot compute. These are
 refused with the reason; make them in an app that shows the approval prompt. It also refuses
 to put a user into a group that was created after the last restart, because that user could
 not connect; restart first, then repeat. Deleting a user
 is done without a question. Deleting a group is done without a question too, unless a member
 would lose MFA, a block or its authentication method with the group; then it is refused.
+Blocking a group is done without a question, like blocking a user; taking a user out of its
+group follows the same limits as a move to another group.
 
-**Restart.** No tool restarts Access Server by itself. One change needs a warm restart: a
-new group. Until the restart Access Server refuses the VPN connections of its members
+**Restart.** No tool restarts Access Server by itself. Two changes need a warm restart: a
+changed access list (until the restart the old list applies; `modify_access_list` says so),
+and a new group. Until the restart Access Server refuses the VPN connections of its members
 ("User authentication failed"). `create_group` says so, and a user put into such a group gets
 the line "group ... was created after the last restart: ... cannot connect until a warm
 restart". The server remembers the groups it created in `<config dir>/fresh_groups.json`, so
@@ -292,8 +307,9 @@ restart can disconnect them, and they have to reconnect. An app that cannot show
 question (Claude Desktop) cannot restart.
 
 **The agent's own account is protected in every mode.** A change that would block, delete or
-demote the account as-mcp-server signs in with, move it to another group, change its
-authentication method or delete its group is refused, also when it would arrive through the
+demote the account as-mcp-server signs in with, move it to another group or out of its
+group, change its authentication method, reset its password or MFA, or block or delete its
+group is refused, also when it would arrive through the
 account's group. Switching MFA on for that account is not a lockout, but the next sign-in
 then needs a code from a person: the approval question says so, and automatic mode refuses
 it. The account is recognised without looking at letter case: signed in as `openvpn`, a
@@ -320,22 +336,44 @@ two words, so the name tells the kind of profile.
 A `~` at the start of `OPENVPN_AS_OUTPUT_DIR` is your home folder. Give a full path: a relative
 one is taken from the working directory of the server process, which your AI app chooses. A
 folder that exists already keeps its permissions; only the files are made private.
-There is no way to pass a password to a tool. Delete a file once it has been delivered. An
+There is no way to pass a password to a tool. A new MFA secret is never kept: `reset_user_mfa`
+drops the one Access Server returns, and the user sets up MFA again at the next sign-in.
+Delete a file once it has been delivered. An
 agent that can read files on your machine (Claude Code, Codex) can read this folder too.
 
 **Audit log.** Every change the server tried, and every one it refused or you cancelled, is
 one JSON line per item in `<config dir>/audit.jsonl`: time, tool, target, outcome, approval
 mode, server, the state before and after. A call whose arguments are invalid by themselves
 (for example `update_user` with `deny=true`, or no field at all) is turned down before any
-check and leaves no line. Saving a support report changes nothing and leaves no line either.
+check and leaves no line. Saving a support report changes nothing but leaves one line
+(outcome `applied` or `failed`), so repeated reports can be seen.
 Secrets are not written to the log. The file is not rotated.
 
 **Blocking a user.** `block_user` sets `deny` and disconnects, because Access Server does not
 end a running session when a user is blocked. `update_user` with `deny=false` unblocks.
-Blocking a group or moving a user into a blocked group does not disconnect anyone; the
-approval text and the result name the connected users, and `disconnect_vpn_sessions` ends
-their sessions. Deleting a group does not disconnect anyone either; the approval text lists
+`block_group` does the same for a group: it sets `deny` on the group and disconnects the
+members it blocks; a member that sets `deny=false` itself stays allowed and connected, and
+the approval text names it. `update_group` refuses `deny=true`. Moving a user into a blocked
+group, or a reset of `deny`, does not disconnect anyone; the approval text and the result name
+the connected users, and `disconnect_vpn_sessions` ends their sessions. Deleting a group does not disconnect anyone either; the approval text lists
 its members.
+
+**Access lists and domain rules.** An access list says which networks and hosts a user or
+group may reach. Access Server applies the first entry that matches, so `modify_access_list`
+puts a narrower entry in front of a wider one (a deny for one host before an allow for its
+network, or the other way round), shows the order after the change in the approval question,
+writes the change in one request and reads the order back. A changed access list applies
+only after a warm restart. Domain rules live in rule sets (`save_access_ruleset`,
+`assign_access_ruleset`, `modify_access_rules`, `delete_access_rulesets`). They act on names
+that a VPN client looks up through the DNS of the VPN, from its next connection, without a
+restart: `nat` answers with an address of Access Server (`100.64.x.x`) that forwards to the
+host; `route` answers the same way but needs a route back from the host's network; `bypass`
+answers the real address and opens nothing; `deny` refuses the name on 3.2 and answers the
+real address on 3.1, but never blocks the address itself: an access list that allows it still
+lets the traffic through. To block an address, change the access list. Of two rule sets of
+one owner, and of two rules in one rule set, the lower position applies first. Access Server
+does not list a rule set without an owner, so taking a rule set away from its last owner is
+refused; delete it instead. All of this was measured on 3.1.0 and 3.2.4.
 
 **Access Server versions.** Write mode is tested on Access Server 3.1 and 3.2. On a newer
 version every approval text and result carries a warning that the version is not on the
@@ -349,8 +387,14 @@ Known limits of this release:
   as-mcp-server knows it only for the groups it created itself.
 - Download links cannot be listed or revoked. Blocking the user later does not stop an unused
   link, though the downloaded profile cannot connect while the user is blocked.
-- Server settings cannot be changed. Of the access lists, only the IPv4 entries of class
-  `route` and `nat` that say what a user or group may reach can be changed.
+- Server settings cannot be changed.
+- `modify_access_list` changes only the IPv4 entries of class `route` and `nat` in the list of
+  what a user or group may reach, and only on the tested Access Server versions; other entries
+  (class user, group, all, IPv6 lists, the list of who may reach the owner) stay as they are.
+  An entry of class `all` written with sacli cannot be written back through the Web API, so a
+  change that would have to move it is refused.
+- Domain rules: only the match types `domain`, `subdomain` and `domain_or_subdomain` are
+  offered; rules of type `filter` are shown and can be deleted, never changed.
 
 ## Configuration reference
 
@@ -478,8 +522,8 @@ stops working.
 
 ## Roadmap and feedback
 
-0.2.0 adds the first write operations behind an explicit opt-in. Later releases may add
-access rules, access lists and applying server changes. Tell us what is missing with the
+0.3.0 adds write mode behind an explicit opt-in: users and groups, profiles, passwords and MFA
+resets, access lists and domain rules. Later releases may add server settings. Tell us what is missing with the
 **Tool request** issue template and report problems with **Bug report**.
 
 ## Development

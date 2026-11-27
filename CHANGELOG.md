@@ -7,7 +7,45 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - unreleased
 
+The first public release with write mode: it ships the write mode of 0.2.0 (below) and adds
+access lists, domain rules, password and MFA resets, blocking a group and taking a user out of
+its group.
+
 ### Added
+- `modify_access_list`: add or remove IPv4 access-list entries (class `route` or `nat`) of one
+  user or group in one request. Access Server applies the first entry that matches, so a
+  narrower entry goes in front of a wider one; the approval question shows the order after
+  the change, and the order is read back. A changed access list applies after a warm restart,
+  and the result says so. Refused on an untested Access Server minor, in automatic mode, for
+  `__DEFAULT__`, for a duplicate entry or an opposite one for the same traffic, and when an
+  entry of class `all` would have to be rewritten.
+- Domain rules: `save_access_ruleset` (a new rule set with its owners in one approval, or a
+  new name and comment), `assign_access_ruleset` (give, move to another position, take away;
+  never from the last owner), `modify_access_rules` (add, change by id, delete, in one request;
+  match types `domain`, `subdomain` and `domain_or_subdomain`) and `delete_access_rulesets`. A
+  rule with `deny` carries the note that it does not block the address of the host.
+- `block_group`: `deny` on a group, then the running sessions of the members it blocks are
+  disconnected; a member with its own `deny=false` stays connected and is named.
+- `reset_user_password`: a new generated password per local user, saved to a file; the old
+  one stops working at once, a running VPN session stays connected.
+- `reset_user_mfa`: the user sets up MFA again at the next sign-in; the new secret that
+  Access Server returns is dropped. A name without a user record is refused before the
+  request, because Access Server would create a record for it.
+- `update_user(remove_from_group=true)`: takes users out of their group; the server values
+  apply from the next VPN connection.
+- Automatic approval mode refuses the access tools and the two resets. The account the
+  server signs in with cannot get a password or MFA reset or be taken out of its group.
+- `create_support_report` writes one audit line per report (`applied` or `failed`).
+
+### Changed
+- `update_group(deny=true)` is refused: use `block_group`, which also disconnects the members'
+  sessions. `deny=false` and `reset_to_inherited` work as before.
+- The approval question for several items says "K of N items need attention" right under the
+  action line, followed by the warnings, so apps that show three lines show them.
+- The server instructions of write mode name `block_group`, the warm restart after an
+  access-list change, and that a domain rule with `deny` does not block an address.
+- `requires-python` is `>=3.12,<3.15`: some dependencies have no Windows build for Python
+  3.15, and an install there failed.
 
 ## [0.2.0] - unreleased
 
