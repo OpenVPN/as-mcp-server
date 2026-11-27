@@ -50,7 +50,8 @@ Every command names the Python version (`--python 3.13`); uv downloads that Pyth
 it is missing. Without the flag uv picks the newest Python it can find, and a release keeps
 the exact dependency versions it was tested with, some of which have no ready-made build for
 a Python that came out later: the install then needs a C and Rust compiler, or fails. Python
-3.12 works as well.
+3.12 works as well. The package does not install on Python 3.15 or later: some of its
+dependencies have no ready-made Windows build for it.
 
 ### Agent setup
 
