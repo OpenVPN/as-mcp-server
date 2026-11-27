@@ -9,14 +9,17 @@ import asyncio
 import pytest
 from fastmcp.exceptions import ToolError
 
+from as_mcp_server.client import ClientHolder
 from as_mcp_server.texts import (
     AUTO_ACCESS,
     MSG_AUTO_LIMIT,
     MSG_DUPLICATE_ENTRY,
+    MSG_NO_SUCH_RULESET,
     MSG_NOT_WRITABLE,
     NOTE_ACCESS_LIST_RESTART,
+    NOTE_DOMAIN_RULES,
 )
-from as_mcp_server.tools_access_write import MSG_DEFAULT_OWNER
+from as_mcp_server.tools_access_write import MSG_DEFAULT_OWNER, MSG_RULESET_NOTHING
 from tests.live.probe import T1, T2, Probe
 from tests.live.test_users_groups_live import scratch  # noqa: F401  (the fixture)
 from tests.live.test_writes_live import sacli
@@ -200,3 +203,79 @@ async def test_a_group_list_keeps_services_and_refuses_what_it_cannot_write(
 
     sacli(scratch.live.name, "--user", group, "UserPropDelAll")
     assert await every_list(scratch) == before
+
+
+async def test_a_rule_set_is_created_renamed_and_deleted(scratch) -> None:  # noqa: F811
+    holder = ClientHolder(scratch.live.settings)
+    api = holder.get()
+    before = await scratch.call("list_access_rulesets")
+    staff_rules = await scratch.call("list_access_rules", {"ruleset_ids": [1]})
+    await scratch.call("create_user", {"users": [{"username": scratch.user}]})
+    await scratch.call("create_group", {"name": scratch.group})
+    name = f"{scratch.group}-rs"
+    made: list[int] = []
+    try:
+        seen: list[str] = []
+        created = await scratch.call(
+            "save_access_ruleset",
+            {"name": name, "owners": [scratch.user, scratch.group], "all_users": True},
+            seen=seen,
+        )
+        (item,) = created["items"]
+        assert item["outcome"] == "done", item
+        made.append(item["id"])
+        assert sorted(item["after"]["owners"]) == sorted(
+            [
+                f"{scratch.user} (user) at position 100",
+                f"{scratch.group} (group) at position 100",
+                "all users at position 100",
+            ]
+        )
+        assert item["after"]["comment"] == ""
+        assert NOTE_DOMAIN_RULES in created["notes"]
+
+        renamed = await scratch.call(
+            "save_access_ruleset",
+            {"name": f"{name}-b", "ruleset_id": item["id"], "comment": "renamed"},
+        )
+        assert renamed["items"][0]["outcome"] == "done", renamed
+        assert renamed["items"][0]["after"]["name"] == f"{name}-b"
+        with pytest.raises(ToolError) as error:
+            await scratch.call(
+                "save_access_ruleset", {"name": f"{name}-b", "ruleset_id": item["id"]}
+            )
+        assert str(error.value) == MSG_RULESET_NOTHING.format(id=item["id"])
+        with pytest.raises(ToolError) as error:
+            await scratch.auto("delete_access_rulesets", {"ids": [item["id"]]})
+        assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_ACCESS)
+
+        seen = []
+        deleted = await scratch.call(
+            "delete_access_rulesets", {"ids": [item["id"]]}, seen=seen
+        )
+        assert deleted["items"][0]["outcome"] == "done", deleted
+        assert deleted["items"][0]["after"] == {"exists": False}
+        assert "    also: it has no rules" in seen[0].splitlines()
+        assert "all users at position 100" in seen[0]
+        made.remove(item["id"])
+
+        # A rule set without an owner is not listed, but can still be deleted.
+        lost = (await api.post("/access/rulesets/add", {"name": name, "comment": ""}))[
+            "id"
+        ]
+        made.append(lost)
+        seen = []
+        gone = await scratch.call("delete_access_rulesets", {"ids": [lost]}, seen=seen)
+        assert gone["items"][0]["outcome"] == "done", gone
+        assert seen[0].splitlines()[1] == (
+            f"Action: Delete rule set (1 item): rule set {lost}"
+        )
+        made.remove(lost)
+        with pytest.raises(ToolError) as error:
+            await scratch.call("delete_access_rulesets", {"ids": [lost]})
+        assert str(error.value) == MSG_NO_SUCH_RULESET.format(id=lost)
+    finally:
+        if made:
+            await api.post("/access/rulesets/delete", {"ids": made})
+    assert await scratch.call("list_access_rulesets") == before
+    assert await scratch.call("list_access_rules", {"ruleset_ids": [1]}) == staff_rules

@@ -298,6 +298,14 @@ to the real host; the real address stays closed.
 - `/access/user-rulesets/modify` takes `add` and `delete` in one call.
 - `/access/rulesets/delete` of an assigned rule set removes its assignments too; an id that
   does not exist is a 400 "Non-existent ruleset: N".
+- `/access/rulesets/add` takes an empty `comment`, and a name that another rule set has
+  (a new id). `/access/rulesets/list` does not show a rule set without an owner, but
+  `/access/rules/list` answers 200 for it and 400 "Non-existent ruleset: N" once it is
+  deleted; the tools use that to find and to check a deletion (2026-11-27).
+- `/access/user-rulesets/modify` for the same owner and rule set again moves it to the new
+  position (no second row); an unknown owner is a 400 "Non-existent subject name: X", and
+  `/access/rulesets/list {"owner": X}` is a 400 "Non-existent ruleset owner: X"
+  (2026-11-27).
 
 **MFA reset.** `POST /userprop/mfa/generate-secret {"username", "reset_secret": true,
 "locked": false}` on an enrolled user answers 200 with a new `totp_secret` (never print
