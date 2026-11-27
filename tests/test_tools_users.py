@@ -2012,7 +2012,7 @@ async def test_every_write_tool_tells_the_agent_how_to_read_the_result(
         for name, tool in tools.items()
         if tool.annotations.read_only_hint is False and name != "login"
     ]
-    assert len(flow) == 15
+    assert len(flow) == 16
     for name in flow:
         description = tools[name].description
         assert "unknown_after_timeout" in description, name

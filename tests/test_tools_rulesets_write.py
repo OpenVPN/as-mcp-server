@@ -20,6 +20,7 @@ from as_mcp_server.settings import Settings
 from as_mcp_server.texts import (
     AUTO_ACCESS,
     MSG_AUTO_LIMIT,
+    MSG_LAST_OWNER,
     MSG_NO_SUCH_RULESET,
     NOTE_DOMAIN_RULES,
 )
@@ -164,7 +165,12 @@ class RuleSetServer:
         return httpx.Response(200)
 
     def _assign(self, request: httpx.Request) -> httpx.Response:
-        added = json.loads(request.content).get("add", {})
+        body = json.loads(request.content)
+        added = body.get("add", {})
+        taken = body.get("delete", {})
+        for owner in taken:
+            if self._known(owner) is None:
+                return bad(f"Non-existent subject name: {owner}")
         for owner, wanted in added.items():
             if self._known(owner) is None:
                 return bad(f"Non-existent subject name: {owner}")
@@ -186,6 +192,12 @@ class RuleSetServer:
                         "position": entry["position"],
                     }
                 )
+        for owner, gone in taken.items():
+            self.owners = [
+                row
+                for row in self.owners
+                if not (row["owner"] == owner and row["id"] in gone["ruleset_ids"])
+            ]
         return httpx.Response(200)
 
     def _rules(self, request: httpx.Request) -> httpx.Response:
@@ -209,6 +221,9 @@ class RuleSetServer:
 
     async def save(self, args: dict[str, Any], **options: Any) -> Any:
         return await call_tool(self.mcp, "save_access_ruleset", args, **options)
+
+    async def assign(self, args: dict[str, Any], **options: Any) -> Any:
+        return await call_tool(self.mcp, "assign_access_ruleset", args, **options)
 
     async def delete(self, ids: list[int], **options: Any) -> Any:
         return await call_tool(
@@ -535,3 +550,229 @@ async def test_a_rule_set_still_there_after_the_delete_is_a_partial_result(
     (item,) = result["items"]
     assert item["outcome"] == "partial"
     assert item["detail"] == "Access Server still has rule set 1 (done: written)"
+
+
+# --- assign_access_ruleset -------------------------------------------------------
+
+
+def with_owners(server: RuleSetServer, *rows: tuple[str, str, int]) -> None:
+    """More owners of rule set 1: (owner, owner_type, position)."""
+    for owner, owner_type, position in rows:
+        server.owners.append(
+            {"owner": owner, "owner_type": owner_type, "id": 1, "position": position}
+        )
+
+
+async def test_assign_to_two_users_and_a_group_is_one_approval(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    server.users.append(record("bob"))
+    server.groups.append(record("ops"))
+    seen: list[str] = []
+    result = await server.assign(
+        {"ruleset_id": 1, "owners": ["alice", "bob", "ops"]}, seen=seen
+    )
+    assert [item["outcome"] for item in result["items"]] == ["done"] * 3, result
+    assert len(seen) == 1
+    lines = seen[0].splitlines()
+    assert lines[1] == (
+        "Action: Assign rule set Staff web (id 1) (3 items): alice (user), "
+        "bob (user), ops (group)"
+    )
+    assert "    position: (not set) -> 100" in lines
+    assert server.sent(ASSIGN) == [
+        {"add": {name: [{"ruleset_id": 1, "position": 100}]}}
+        for name in ("alice", "bob", "ops")
+    ]
+    assert result["items"][0]["after"] == {"position": 100, "other_rule_sets": []}
+    assert result["notes"] == [NOTE_DOMAIN_RULES]
+    assert [line["outcome"] for line in server.audit()] == ["applied"] * 3
+
+
+async def test_a_new_owner_gets_it_after_its_last_rule_set(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    server.sets[5] = {"name": "Mail", "comment": ""}
+    server.rules[5] = []
+    server.owners.append(
+        {"owner": "alice", "owner_type": "user_connect", "id": 5, "position": 300}
+    )
+    seen: list[str] = []
+    await server.assign({"ruleset_id": 1, "owners": ["alice"]}, seen=seen)
+    assert server.sent(ASSIGN) == [
+        {"add": {"alice": [{"ruleset_id": 1, "position": 400}]}}
+    ]
+    assert "    also: its other rule sets: Mail (id 5) at position 300" in (
+        seen[0].splitlines()
+    )
+
+
+async def test_all_users_is_assigned_as_the_default_record(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    result = await server.assign({"ruleset_id": 1, "all_users": True}, seen=seen)
+    assert result["items"][0]["target"] == "all users"
+    assert server.sent(ASSIGN) == [
+        {"add": {DEFAULT: [{"ruleset_id": 1, "position": 100}]}}
+    ]
+
+
+async def test_an_owner_that_already_has_the_rule_set_is_refused(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    for extra in ({}, {"position": 100}):
+        with pytest.raises(ToolError) as error:
+            await server.assign({"ruleset_id": 1, "owners": ["staff"], **extra})
+        assert str(error.value) == (
+            "Refused: staff already has rule set 1 at position 100. Give another "
+            "position to move it there."
+        )
+    assert server.writes() == []
+
+
+async def test_a_new_position_for_an_owner_that_has_it_moves_it(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    seen: list[str] = []
+    result = await server.assign(
+        {"ruleset_id": 1, "owners": ["staff"], "position": 50}, seen=seen
+    )
+    assert result["items"][0]["outcome"] == "done"
+    assert "    position: 100 -> 50" in seen[0].splitlines()
+    assert server.sent(ASSIGN) == [
+        {"add": {"staff": [{"ruleset_id": 1, "position": 50}]}}
+    ]
+    assert server.owners == [
+        {"owner": "staff", "owner_type": "group", "id": 1, "position": 50}
+    ]
+
+
+async def test_a_position_another_rule_set_of_the_owner_has_is_refused_too(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    server.sets[5] = {"name": "Mail", "comment": ""}
+    server.rules[5] = []
+    server.owners.append(
+        {"owner": "alice", "owner_type": "user_connect", "id": 5, "position": 300}
+    )
+    with pytest.raises(ToolError) as error:
+        await server.assign({"ruleset_id": 1, "owners": ["alice"], "position": 300})
+    assert str(error.value).startswith(
+        "Refused: alice already has rule set Mail (id 5) at position 300"
+    )
+
+
+async def test_taking_away_the_last_owner_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.assign({"ruleset_id": 1, "owners": ["staff"], "unassign": True})
+    assert str(error.value) == MSG_LAST_OWNER.format(id=1)
+    assert server.writes() == []
+
+
+async def test_taking_away_every_owner_in_one_call_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with_owners(server, ("alice", "user_connect", 100))
+    with pytest.raises(ToolError) as error:
+        await server.assign(
+            {"ruleset_id": 1, "owners": ["staff", "alice"], "unassign": True}
+        )
+    assert str(error.value) == MSG_LAST_OWNER.format(id=1)
+    assert server.writes() == []
+
+
+async def test_taking_away_one_of_two_owners_is_allowed(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with_owners(server, ("alice", "user_connect", 200))
+    seen: list[str] = []
+    result = await server.assign(
+        {"ruleset_id": 1, "owners": ["alice"], "unassign": True}, seen=seen
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert item["after"] == {"position": None, "other_rule_sets": []}
+    assert server.sent(ASSIGN) == [{"delete": {"alice": {"ruleset_ids": [1]}}}]
+    lines = seen[0].splitlines()
+    assert lines[1] == (
+        "Action: Unassign rule set Staff web (id 1) (1 item): alice (user)"
+    )
+    assert "    position: 200 -> (not set)" in lines
+    assert "    also: owners that keep it: staff (group) at position 100" in lines
+    assert [row["owner"] for row in server.owners] == ["staff"]
+
+
+async def test_all_users_is_unassigned_as_the_default_record(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with_owners(server, (DEFAULT, DEFAULT, 100))
+    result = await server.assign({"ruleset_id": 1, "all_users": True, "unassign": True})
+    assert result["items"][0]["outcome"] == "done"
+    assert server.sent(ASSIGN) == [{"delete": {DEFAULT: {"ruleset_ids": [1]}}}]
+
+
+async def test_taking_away_from_an_owner_without_it_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.assign({"ruleset_id": 1, "owners": ["alice"], "unassign": True})
+    assert str(error.value) == "Refused: alice does not have rule set 1."
+
+
+async def test_a_position_with_unassign_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    with_owners(server, ("alice", "user_connect", 200))
+    with pytest.raises(ToolError) as error:
+        await server.assign(
+            {"ruleset_id": 1, "owners": ["alice"], "unassign": True, "position": 5}
+        )
+    assert str(error.value) == (
+        "Refused: position is for giving a rule set, not for taking it away."
+    )
+
+
+async def test_assign_refuses_unknown_ids_and_owners(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    cases = [
+        ({"ruleset_id": 9, "owners": ["alice"]}, MSG_NO_SUCH_RULESET.format(id=9)),
+        ({"ruleset_id": 1, "owners": [DEFAULT]}, MSG_DEFAULT_AS_OWNER),
+        (
+            {"ruleset_id": 1, "owners": ["Alice"]},
+            "There is no user or group named Alice on this Access Server (names "
+            "are case-sensitive).",
+        ),
+    ]
+    for args, expected in cases:
+        with pytest.raises(ToolError) as error:
+            await server.assign(args)
+        assert str(error.value) == expected
+    assert server.writes() == []
+
+
+async def test_a_rule_set_without_an_owner_can_be_given_one(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path)
+    server.sets[5] = {"name": "Lost", "comment": ""}
+    server.rules[5] = []
+    seen: list[str] = []
+    result = await server.assign({"ruleset_id": 5, "owners": ["alice"]}, seen=seen)
+    assert result["items"][0]["outcome"] == "done"
+    assert seen[0].splitlines()[1] == (
+        "Action: Assign rule set 5 (1 item): alice (user)"
+    )
+
+
+async def test_assign_in_automatic_mode_is_refused(tmp_path: Path) -> None:
+    server = RuleSetServer(tmp_path, mode="auto")
+    with pytest.raises(ToolError) as error:
+        await server.assign({"ruleset_id": 1, "owners": ["alice"]}, answer="none")
+    assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_ACCESS)
+    assert server.writes() == []
+
+
+async def test_an_assignment_the_server_does_not_show_is_a_partial_result(
+    tmp_path: Path,
+) -> None:
+    server = RuleSetServer(tmp_path)
+    server.fail[ASSIGN] = (200, None)
+    result = await server.assign({"ruleset_id": 1, "owners": ["alice"]})
+    (item,) = result["items"]
+    assert item["outcome"] == "partial"
+    assert item["detail"] == (
+        "Access Server shows alice without rule set 1 (done: written)"
+    )

@@ -14,6 +14,7 @@ from as_mcp_server.texts import (
     AUTO_ACCESS,
     MSG_AUTO_LIMIT,
     MSG_DUPLICATE_ENTRY,
+    MSG_LAST_OWNER,
     MSG_NO_SUCH_RULESET,
     MSG_NOT_WRITABLE,
     NOTE_ACCESS_LIST_RESTART,
@@ -279,3 +280,92 @@ async def test_a_rule_set_is_created_renamed_and_deleted(scratch) -> None:  # no
             await api.post("/access/rulesets/delete", {"ids": made})
     assert await scratch.call("list_access_rulesets") == before
     assert await scratch.call("list_access_rules", {"ruleset_ids": [1]}) == staff_rules
+
+
+async def test_a_rule_set_is_given_moved_and_taken_away(scratch) -> None:  # noqa: F811
+    api = ClientHolder(scratch.live.settings).get()
+    before = await scratch.call("list_access_rulesets")
+    await scratch.call("create_user", {"users": [{"username": scratch.user}]})
+    await scratch.call("create_group", {"name": scratch.group})
+    made: list[int] = []
+    try:
+        created = await scratch.call(
+            "save_access_ruleset",
+            {"name": f"{scratch.group}-rs", "owners": [scratch.group]},
+        )
+        ruleset = created["items"][0]["id"]
+        made.append(ruleset)
+
+        seen: list[str] = []
+        given = await scratch.call(
+            "assign_access_ruleset",
+            {"ruleset_id": ruleset, "owners": [scratch.user], "all_users": True},
+            seen=seen,
+        )
+        assert [i["outcome"] for i in given["items"]] == ["done", "done"], given
+        assert [i["target"] for i in given["items"]] == [scratch.user, "all users"]
+        assert all(i["after"]["position"] == 100 for i in given["items"])
+        assert (
+            seen[0]
+            .splitlines()[1]
+            .startswith(
+                f"Action: Assign rule set {scratch.group}-rs (id {ruleset}) (2 items):"
+            )
+        )
+
+        moved = await scratch.call(
+            "assign_access_ruleset",
+            {"ruleset_id": ruleset, "owners": [scratch.user], "position": 50},
+        )
+        assert moved["items"][0]["before"]["position"] == 100
+        assert moved["items"][0]["after"]["position"] == 50
+        with pytest.raises(ToolError) as error:
+            await scratch.call(
+                "assign_access_ruleset",
+                {"ruleset_id": ruleset, "owners": [scratch.user]},
+            )
+        assert "already has rule set" in str(error.value)
+
+        taken = await scratch.call(
+            "assign_access_ruleset",
+            {"ruleset_id": ruleset, "all_users": True, "unassign": True},
+        )
+        assert taken["items"][0]["outcome"] == "done", taken
+        assert taken["items"][0]["after"]["position"] is None
+        with pytest.raises(ToolError) as error:
+            await scratch.call(
+                "assign_access_ruleset",
+                {
+                    "ruleset_id": ruleset,
+                    "owners": [scratch.user, scratch.group],
+                    "unassign": True,
+                },
+            )
+        assert str(error.value) == MSG_LAST_OWNER.format(id=ruleset)
+        with pytest.raises(ToolError) as error:
+            await scratch.auto(
+                "assign_access_ruleset",
+                {"ruleset_id": ruleset, "all_users": True},
+            )
+        assert str(error.value) == MSG_AUTO_LIMIT.format(reason=AUTO_ACCESS)
+        rows = (await scratch.call("list_access_rulesets"))["rulesets"]
+        assert sorted(
+            (row["owner"], row["position"]) for row in rows if row["id"] == ruleset
+        ) == sorted([(scratch.user, 50), (scratch.group, 100)])
+
+        # A rule set without an owner can be given one.
+        lost = (
+            await api.post(
+                "/access/rulesets/add", {"name": f"{scratch.group}-lost", "comment": ""}
+            )
+        )["id"]
+        made.append(lost)
+        found = await scratch.call(
+            "assign_access_ruleset", {"ruleset_id": lost, "owners": [scratch.group]}
+        )
+        assert found["items"][0]["outcome"] == "done", found
+        assert found["items"][0]["after"]["position"] == 200
+    finally:
+        if made:
+            await api.post("/access/rulesets/delete", {"ids": made})
+    assert await scratch.call("list_access_rulesets") == before

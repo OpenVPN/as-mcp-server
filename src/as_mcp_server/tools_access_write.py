@@ -1,5 +1,5 @@
 """Write-mode tools for access control: `modify_access_list`, `save_access_ruleset`,
-`delete_access_rulesets`.
+`delete_access_rulesets`, `assign_access_ruleset`.
 
 Measured on 3.1.0 and 3.2.4: the first entry of an access list that matches wins;
 one /userprop/access/set request with items_remove and items_append reorders a
@@ -36,6 +36,7 @@ from as_mcp_server.effective import DEFAULT_RECORD, CannotCompute
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
     AUTO_ACCESS,
+    MSG_LAST_OWNER,
     MSG_NO_ACCESS_CHANGE,
     MSG_NO_SUCH_RULESET,
     NOTE_ACCESS_LIST_RESTART,
@@ -56,7 +57,12 @@ from as_mcp_server.writes import (
     run_write,
 )
 
-TOOLS = ("modify_access_list", "save_access_ruleset", "delete_access_rulesets")
+TOOLS = (
+    "modify_access_list",
+    "save_access_ruleset",
+    "delete_access_rulesets",
+    "assign_access_ruleset",
+)
 PRIVATE_ACCESS = "vpn.server.routing.private_access"
 MSG_NO_DEFAULT_VIA = (
     "Refused: give via (route or nat) for every new entry: the server setting "
@@ -91,6 +97,9 @@ MSG_RULESET_UNLISTED = (
     "Refused: rule set {id} has no owner, so Access Server does not show its name "
     "and comment. Give it an owner with assign_access_ruleset first, or delete it "
     "with delete_access_rulesets."
+)
+MSG_UNASSIGN_POSITION = (
+    "Refused: position is for giving a rule set, not for taking it away."
 )
 MAX_RULESET_NAME = 128
 MAX_RULESET_COMMENT = 200
@@ -558,6 +567,174 @@ class _DeleteAccessRulesets:
         raise Partial(["written"], f"Access Server still has rule set {item}")
 
 
+@dataclass(frozen=True)
+class _Owner:
+    name: str
+    all_users: bool = False
+
+    @property
+    def sent(self) -> str:
+        return DEFAULT_RECORD if self.all_users else self.name
+
+
+@dataclass
+class _AssignAccessRuleset:
+    """Give one rule set to owners, move it at owners that have it, or take it away
+    (one request per owner)."""
+
+    ruleset_id: int
+    unassign: bool
+    position: int | None
+    # Every owner this call takes the rule set away from: the last owner is counted
+    # over the whole call.
+    taken: frozenset[str]
+    tool: str = "assign_access_ruleset"
+    action: str = "Assign rule set"
+    note: str = NOTE_DOMAIN_RULES
+    needs_output_dir: bool = False
+    # The rows of the rule set as last read, and per owner (the name sent) how it
+    # is shown, its other rule sets and the position planned for it.
+    _rows: list[dict[str, Any]] = field(default_factory=list)
+    _labels: dict[str, str] = field(default_factory=dict)
+    _others: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _planned: dict[str, int] = field(default_factory=dict)
+
+    def key(self, item: _Owner) -> str:
+        return "all users" if item.all_users else item.name.casefold()
+
+    def target(self, item: _Owner) -> str:
+        return "all users" if item.all_users else item.name
+
+    async def read(self, client: AccessServerClient, item: _Owner) -> dict[str, Any]:
+        if self.unassign and self.position is not None:
+            raise ToolError(MSG_UNASSIGN_POSITION)
+        self._rows, _ = await _rule_set(client, self.ruleset_id)
+        name = self._rows[0].get("name") if self._rows else None
+        shown = (
+            f"rule set {self.ruleset_id}"
+            if name is None
+            else f"rule set {name} (id {self.ruleset_id})"
+        )
+        self.action = f"{'Unassign' if self.unassign else 'Assign'} {shown}"
+        if item.all_users:
+            label = _owner_label(DEFAULT_RECORD, None)
+        else:
+            if item.name == DEFAULT_RECORD:
+                raise ToolError(MSG_DEFAULT_AS_OWNER)
+            kind = await kind_of(client, item.name)
+            if kind is None:
+                raise _unknown_owner(item.name)
+            label = f"{item.name} ({kind})"
+        self._labels[item.sent] = label
+        mine = _rows(await client.post("/access/rulesets/list", {"owner": item.sent}))
+        self._others[item.sent] = [r for r in mine if r.get("id") != self.ruleset_id]
+        return _holding(self.ruleset_id, mine)
+
+    def plan(self, item: _Owner, before: dict[str, Any], own: Own) -> Plan:
+        owner = clean(_owner_name(item.sent))
+        has = before["position"]
+        others = self._others[item.sent]
+        if self.unassign:
+            if has is None:
+                raise ToolError(
+                    f"Refused: {owner} does not have rule set {self.ruleset_id}."
+                )
+            keep = [row for row in self._rows if row.get("owner") not in self.taken]
+            if not keep:
+                raise ToolError(MSG_LAST_OWNER.format(id=self.ruleset_id))
+            effects = [
+                "owners that keep it: "
+                + ", ".join(_state(self.ruleset_id, keep)["owners"])
+            ]
+            return Plan(
+                PreviewItem(
+                    self._labels[item.sent], {"position": (has, None)}, tuple(effects)
+                ),
+                auto_reason=AUTO_ACCESS,
+            )
+        if has is not None and self.position in (None, has):
+            raise ToolError(
+                f"Refused: {owner} already has rule set {self.ruleset_id} at position "
+                f"{has}. Give another position to move it there."
+            )
+        if self.position is None:
+            used = [r["position"] for r in others if isinstance(r.get("position"), int)]
+            planned = max(used, default=0) + POSITION_STEP
+        else:
+            clash = next(
+                (r for r in others if r.get("position") == self.position), None
+            )
+            if clash is not None:
+                raise ToolError(
+                    MSG_POSITION_TAKEN.format(
+                        owner=owner,
+                        name=clean(clash.get("name")),
+                        id=clash.get("id"),
+                        position=self.position,
+                    )
+                )
+            planned = self.position
+        self._planned[item.sent] = planned
+        effects = []
+        if others:
+            effects.append(
+                "its other rule sets: "
+                + ", ".join(_holding(None, others)["other_rule_sets"])
+            )
+        return Plan(
+            PreviewItem(
+                self._labels[item.sent], {"position": (has, planned)}, tuple(effects)
+            ),
+            auto_reason=AUTO_ACCESS,
+        )
+
+    async def apply(
+        self, client: AccessServerClient, item: _Owner, before: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.unassign:
+            body: dict[str, Any] = {
+                "delete": {item.sent: {"ruleset_ids": [self.ruleset_id]}}
+            }
+        else:
+            position = self._planned[item.sent]
+            body = {
+                "add": {
+                    item.sent: [{"ruleset_id": self.ruleset_id, "position": position}]
+                }
+            }
+        await client.post("/access/user-rulesets/modify", body)
+        return {}
+
+    async def verify(self, client: AccessServerClient, item: _Owner) -> dict[str, Any]:
+        mine = _rows(await client.post("/access/rulesets/list", {"owner": item.sent}))
+        state = _holding(self.ruleset_id, mine)
+        wanted = None if self.unassign else self._planned[item.sent]
+        found = state["position"]
+        if found != wanted:
+            owner = _owner_name(item.sent)
+            raise Partial(
+                ["written"],
+                f"Access Server shows {owner} without rule set {self.ruleset_id}"
+                if found is None
+                else f"Access Server shows {owner} with rule set {self.ruleset_id} "
+                f"at position {found}",
+            )
+        return state
+
+
+def _holding(ruleset_id: int | None, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Where one owner has the rule set, and its other rule sets."""
+    here = next((row for row in rows if row.get("id") == ruleset_id), None)
+    return {
+        "position": None if here is None else here.get("position"),
+        "other_rule_sets": [
+            f"{row.get('name')} (id {row.get('id')}) at position {row.get('position')}"
+            for row in rows
+            if row is not here
+        ],
+    }
+
+
 def _unknown_owner(name: str) -> ToolError:
     return ToolError(
         f"There is no user or group named {clean(name) or '""'} on this Access "
@@ -831,3 +1008,65 @@ def register_access_write_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         return await run_write(
             ctx, deps, _DeleteAccessRulesets(), list(ids), {"ids": list(ids)}
         )
+
+    @mcp.tool(
+        name="assign_access_ruleset",
+        description=(
+            "Give an existing rule set to users, groups or all users, move it to "
+            "another position at an owner that has it, or take it away "
+            "(unassign=true). Of two rule sets of one owner the one with the lower "
+            "position applies first; a new owner gets it after its last rule set "
+            "unless position is given. Taking a rule set away from its last owner "
+            "is refused: Access Server does not list a rule set without an owner; "
+            "delete it with delete_access_rulesets instead. Domain rules apply "
+            "from the next VPN connection of a user, without a restart. Refused in "
+            "automatic approval mode." + RESULT_HELP
+        ),
+        annotations=WRITE,
+        tags={"write"},
+    )
+    async def assign_access_ruleset(
+        ctx: Context,
+        ruleset_id: Annotated[
+            int,
+            Field(ge=1, description="Id of the rule set (from list_access_rulesets)."),
+        ],
+        owners: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=128)]] | None,
+            Field(
+                max_length=MAX_ITEMS,
+                description="Exact, case-sensitive names of users and groups.",
+            ),
+        ] = None,
+        all_users: Annotated[
+            bool, Field(description="true includes all users as one owner.")
+        ] = False,
+        unassign: Annotated[
+            bool,
+            Field(description="true takes the rule set away from these owners."),
+        ] = False,
+        position: Annotated[
+            int | None,
+            Field(
+                ge=1,
+                description=(
+                    "Position at every owner; lower applies first. For an owner "
+                    "that has the rule set, a new position moves it. Omit to put "
+                    "it after each owner's last rule set."
+                ),
+            ),
+        ] = None,
+    ) -> Any:
+        items = [_Owner(name) for name in owners or ()]
+        if all_users:
+            items.append(_Owner(DEFAULT_RECORD, all_users=True))
+        taken = frozenset(item.sent for item in items) if unassign else frozenset()
+        op = _AssignAccessRuleset(ruleset_id, unassign, position, taken)
+        args = {
+            "ruleset_id": ruleset_id,
+            "owners": list(owners or ()),
+            "all_users": all_users,
+            "unassign": unassign,
+            "position": position,
+        }
+        return await run_write(ctx, deps, op, items, args)
