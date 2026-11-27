@@ -26,6 +26,8 @@ from as_mcp_server.texts import (
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
     MSG_CHANGED,
+    MSG_GROUP_AND_REMOVE,
+    MSG_IN_NO_GROUP,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK,
@@ -40,6 +42,7 @@ from as_mcp_server.tools_users import (
     EFFECT_KNOWN_GROUP,
     FIELDS,
     MSG_NOTHING_TO_CHANGE,
+    NOTE_GROUP_LEFT,
     NOTE_KNOWN_GROUP,
     NOTE_NEW_GROUP,
     generate_password,
@@ -2339,4 +2342,121 @@ async def test_a_user_name_is_refused_as_a_group(tmp_path: Path) -> None:
     with pytest.raises(ToolError) as error:
         await server.call("block_group", {"names": ["alice"]})
     assert str(error.value) == "alice is a user, not a group."
+    assert server.written() == []
+
+
+# --- update_user(remove_from_group=true) ------------------------------------------
+
+
+async def test_remove_from_group_sends_group_null(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "remove_from_group": True}, seen=seen
+    )
+    item = only(result)
+    assert item["outcome"] == "done", item
+    assert server.sent(SET) == [[{"name": "alice", "group": None}]]
+    assert item["before"]["group"] == "staff"
+    assert item["after"]["group"] is None
+    assert server.users["alice"]["group"] is None
+    assert "    group: staff -> (no group)" in seen[0].splitlines()
+    # staff set totp and allow_password_change; the server values apply now.
+    assert "    allow_password_change: false -> true" in seen[0].splitlines()
+    assert result["notes"] == [f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_LEFT}"]
+
+
+async def test_remove_from_group_goes_with_other_fields(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    await server.call(
+        "update_user",
+        {"usernames": ["alice"], "remove_from_group": True, "deny_web": True},
+    )
+    assert server.sent(SET) == [[{"name": "alice", "deny_web": True, "group": None}]]
+
+
+async def test_remove_from_group_and_group_together_are_refused(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user",
+            {"usernames": ["alice"], "remove_from_group": True, "group": "admins"},
+        )
+    assert str(error.value) == MSG_GROUP_AND_REMOVE
+    assert server.written() == []
+
+
+async def test_remove_from_group_false_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user", {"usernames": ["alice"], "remove_from_group": False}
+        )
+    assert str(error.value) == "Refused: remove_from_group takes only true."
+    assert server.written() == []
+
+
+async def test_taking_the_own_account_out_of_its_group_is_refused(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["openvpn"]["group"] = "staff"
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user", {"usernames": ["openvpn"], "remove_from_group": True}
+        )
+    assert str(error.value) == MSG_LOCKOUT.format(name="openvpn")
+    assert server.written() == []
+
+
+async def test_leaving_a_group_that_gave_mfa_is_refused_in_automatic_mode(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path, mode="auto")
+    server.users["dave"] = {"own": {}, "group": "mfa"}
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user",
+            {"usernames": ["dave"], "remove_from_group": True},
+            answer="none",
+        )
+    assert str(error.value) == MSG_AUTO_LIMIT.format(
+        reason="MFA would be switched off for user dave"
+    )
+    assert server.written() == []
+
+
+async def test_a_connected_user_is_warned_to_reconnect(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    server.connect("alice")
+    seen: list[str] = []
+    result = await server.call(
+        "update_user", {"usernames": ["alice"], "remove_from_group": True}, seen=seen
+    )
+    line = WARN_RECONNECT.format(name="alice")
+    assert only(result)["warnings"] == [line]
+    assert f"    also: {line}" in seen[0].splitlines()
+
+
+async def test_leaving_a_blocking_group_unblocks_and_a_blocking_server_value_warns(
+    tmp_path: Path,
+) -> None:
+    server = FakeServer(tmp_path)
+    server.users["dave"] = {"own": {}, "group": "blocked"}
+    seen: list[str] = []
+    await server.call(
+        "update_user", {"usernames": ["dave"], "remove_from_group": True}, seen=seen
+    )
+    assert "    deny: true -> false" in seen[0].splitlines()
+
+
+async def test_a_user_in_no_group_is_refused(tmp_path: Path) -> None:
+    server = FakeServer(tmp_path)
+    with pytest.raises(ToolError) as error:
+        await server.call(
+            "update_user", {"usernames": ["bob"], "remove_from_group": True}
+        )
+    assert str(error.value) == MSG_IN_NO_GROUP.format(name="bob")
     assert server.written() == []

@@ -48,6 +48,8 @@ from as_mcp_server.outputs import DELIVERY_REMINDER, OutputError, write_secret_f
 from as_mcp_server.preview import PreviewItem, clean
 from as_mcp_server.texts import (
     MSG_AUTO_FRESH_GROUP,
+    MSG_GROUP_AND_REMOVE,
+    MSG_IN_NO_GROUP,
     MSG_USE_BLOCK,
     MSG_USE_BLOCK_GROUP,
     NOTE_GROUP_MOVE,
@@ -119,6 +121,10 @@ EFFECT_KNOWN_GROUP = (
     "a group of this name was deleted since the last restart of Access Server: "
     "its members can connect without a restart, but Access Server keeps the "
     "access rules of the deleted group until a warm restart (warm_restart)"
+)
+NOTE_GROUP_LEFT = (
+    "A user taken out of its group gets the server values at the next VPN "
+    "connection; a running session keeps the group's values until it ends."
 )
 NOTE_KNOWN_GROUP = (
     "The group is saved and its members can connect without a restart. A group "
@@ -587,6 +593,8 @@ class _UpdateUser:
     changes: dict[str, Any]
     group: str | None = None
     reset: tuple[str, ...] = ()
+    # Take the users out of their group (the API's group null).
+    remove: bool = False
     tool: str = "update_user"
     action: str = "Update user"
     head_changes: str = "users"
@@ -605,6 +613,8 @@ class _UpdateUser:
     def __post_init__(self) -> None:
         if self.group is not None:
             self.note = f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_MOVE}"
+        if self.remove:
+            self.note = f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_LEFT}"
 
     def key(self, item: str) -> str:
         return item.casefold()
@@ -614,13 +624,19 @@ class _UpdateUser:
 
     def _written(self) -> dict[str, Any]:
         moved = {"group": self.group} if self.group is not None else {}
+        if self.remove:
+            moved = {"group": None}
         return {**self.changes, **moved}
 
     async def read(self, client: AccessServerClient, item: str) -> dict[str, Any]:
         user = await read_user(client, item)
         before = _state(user)
         current = before["group"]
-        if self.group is not None:
+        if self.remove:
+            if current is None:
+                raise ToolError(MSG_IN_NO_GROUP.format(name=clean(item)))
+            group = None
+        elif self.group is not None:
             group = await read_group(client, self.group)
             if self._fresh is None:
                 self._fresh = await _is_fresh(self.fresh, client, self.group)
@@ -633,13 +649,19 @@ class _UpdateUser:
         self._users[item], self._groups[item] = user, group
         if group is not None:
             before["group_state"] = _values(_state(group))
-        if self.group is not None or "deny" in self.reset:
+        if self.group is not None or self.remove or "deny" in self.reset:
             # The change can block the user without disconnecting anyone.
             self._sessions[item] = await sessions_of(client, [item])
         return before
 
     def _after(self, item: str, base: Mapping[str, Any]) -> dict[str, Any]:
         user, group = self._users[item], self._groups[item]
+        if self.remove:
+            # user_after keeps the current group when the change names none.
+            alone = {**user, "group": None}
+            return user_after(
+                alone, self.changes, self.reset, None, base, fields=FIELDS
+            )
         if group is None and user.get("group"):
             loose = {k: v for k, v in user.items() if k != "group"}
             after = user_after(
@@ -656,10 +678,14 @@ class _UpdateUser:
         changes = _preview_changes(
             before, after, self.changes, self.reset, in_group or "server-wide"
         )
+        if self.remove:
+            changes["group"] = (before["group"], "(no group)")
         effect = Effect("user", item, _guarded(before), _guarded(after))
         warnings = not_disconnected((effect,), self._sessions.get(item, ()))
         self._effects[item], self._warnings[item] = effect, warnings
-        moved = self.group is not None and after["group"] != before["group"]
+        moved = (self.group is not None or self.remove) and after["group"] != before[
+            "group"
+        ]
         self._moves[item] = self._move_warning(item, warnings) if moved else None
         return Plan(
             PreviewItem(item, changes, self._shown(item, warnings)),
@@ -1317,10 +1343,11 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             "autologin on are refused in automatic approval mode. A false writes "
             "the user's own false, which then overrides the group and the server; "
             "to make a user follow the group or the server again use "
-            "reset_to_inherited. A call with deny=true is not run at all: call "
-            "block_user, then update_user for the other fields. This tool cannot "
-            "set a password, reset MFA enrollment, clear a failed-login lockout "
-            "(deny is not the lockout) or take a user out of every group; say so "
+            "reset_to_inherited. remove_from_group=true takes the users out of "
+            "their group: they get the server values. A call with deny=true is "
+            "not run at all: call block_user, then update_user for the other "
+            "fields. This tool cannot set a password, reset MFA enrollment or "
+            "clear a failed-login lockout (deny is not the lockout); say so "
             "instead of trying another tool." + RESULT_HELP
         ),
         annotations=WRITE,
@@ -1356,8 +1383,8 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             Field(
                 description=(
                     "Exact name of an existing group to move the users into. Omit "
-                    "to leave the group as it is; this tool cannot take a user "
-                    "out of every group. A group created since the last Access "
+                    "to leave the group as it is; remove_from_group takes a user "
+                    "out of its group. A group created since the last Access "
                     "Server restart refuses the VPN connections of its members."
                 ),
                 min_length=1,
@@ -1369,9 +1396,23 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
         allow_generate_profiles: AllowGenerateProfiles = None,
         reroute_gw: RerouteGwParam = None,
         reset_to_inherited: Reset = None,
+        remove_from_group: Annotated[
+            bool | None,
+            Field(
+                description=(
+                    "true takes the users out of their group, so the server "
+                    "values apply; a running VPN session keeps the group's values "
+                    "until it ends. Only true is accepted; not with group."
+                )
+            ),
+        ] = None,
     ) -> Any:
         if deny is True:
             raise ToolError(MSG_USE_BLOCK)
+        if remove_from_group is False:
+            raise ToolError("Refused: remove_from_group takes only true.")
+        if remove_from_group and group is not None:
+            raise ToolError(MSG_GROUP_AND_REMOVE)
         changes, reset = _changes(
             reset_to_inherited,
             deny=deny,
@@ -1384,15 +1425,19 @@ def register_user_tools(mcp: FastMCP, deps: WriteDeps) -> None:
             allow_generate_profiles=allow_generate_profiles,
             reroute_gw=reroute_gw,
         )
-        if not changes and not reset and group is None:
+        remove = remove_from_group is True
+        if not changes and not reset and group is None and not remove:
             raise ToolError(MSG_NOTHING_TO_CHANGE)
         args = {
             "usernames": usernames,
             **changes,
             "group": group,
             "reset_to_inherited": list(reset),
+            "remove_from_group": remove,
         }
-        op = _UpdateUser(changes=changes, group=group, reset=reset, fresh=deps.fresh)
+        op = _UpdateUser(
+            changes=changes, group=group, reset=reset, remove=remove, fresh=deps.fresh
+        )
         return await run_write(ctx, deps, op, usernames, args)
 
     @mcp.tool(

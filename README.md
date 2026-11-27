@@ -348,7 +348,7 @@ Known limits of this release:
   as-mcp-server knows it only for the groups it created itself.
 - Download links cannot be listed or revoked. Blocking the user later does not stop an unused
   link, though the downloaded profile cannot connect while the user is blocked.
-- A user cannot be taken out of every group, and an existing user cannot get a new password.
+- An existing user cannot get a new password.
 - Access rules, access lists and server settings cannot be changed.
 
 ## Configuration reference

@@ -18,6 +18,7 @@ from as_mcp_server.texts import (
     MSG_AUTO_FRESH_GROUP,
     MSG_AUTO_LIMIT,
     MSG_CANCELLED,
+    MSG_IN_NO_GROUP,
     MSG_LOCKOUT,
     MSG_NOT_DISCONNECTED,
     MSG_USE_BLOCK_GROUP,
@@ -25,7 +26,8 @@ from as_mcp_server.texts import (
     WARN_OWN_MFA,
     WARN_RECONNECT,
 )
-from as_mcp_server.tools_users import NOTE_NEW_GROUP
+from as_mcp_server.tools_users import NOTE_GROUP_LEFT, NOTE_NEW_GROUP
+from as_mcp_server.writes import NOTE_USERPROP_CACHE
 from tests.conftest import call_tool
 from tests.live.test_writes_live import Live
 from tests.live.vpn_clients import VpnClient, for_the_stand, require_client_image
@@ -503,6 +505,37 @@ async def test_block_group_disconnects_the_members_it_blocks(scratch) -> None:
     assert (await scratch.user_record(plain))["deny"]["value"] is True
     assert (await scratch.user_record(own_false))["deny"]["value"] is False
     assert [line["tool"] for line in scratch.live.audit()][-1] == "block_group"
+
+
+async def test_remove_from_group_leaves_the_user_in_no_group(scratch) -> None:
+    require_client_image()
+    name, group = scratch.user, scratch.group
+    await scratch.call("create_user", {"users": [{"username": name}]})
+    await scratch.call("update_user", {"usernames": [name], "autologin": True})
+    client = await scratch.connect(name, await scratch.autologin_profile(name))
+    await scratch.call("create_group", {"name": group})
+    await scratch.call("update_user", {"usernames": [name], "group": group})
+    assert (await scratch.user_record(name))["group"] == group
+
+    seen: list[str] = []
+    result = await scratch.call(
+        "update_user", {"usernames": [name], "remove_from_group": True}, seen=seen
+    )
+    (item,) = result["items"]
+    assert item["outcome"] == "done", item
+    assert item["after"]["group"] is None
+    assert item["warnings"] == [WARN_RECONNECT.format(name=name)]
+    assert f"    group: {group} -> (no group)" in seen[0].splitlines()
+    assert result["notes"] == [f"{NOTE_USERPROP_CACHE} {NOTE_GROUP_LEFT}"]
+    assert (await scratch.user_record(name)).get("group") is None
+    assert name not in ((await scratch.group_record(group)).get("members") or [])
+    assert client.running()
+
+    with pytest.raises(ToolError) as error:
+        await scratch.call(
+            "update_user", {"usernames": [name], "remove_from_group": True}
+        )
+    assert str(error.value) == MSG_IN_NO_GROUP.format(name=name)
 
 
 async def test_a_member_of_a_new_group_cannot_connect_until_a_restart(scratch) -> None:
