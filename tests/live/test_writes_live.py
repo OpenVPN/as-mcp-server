@@ -543,7 +543,11 @@ async def test_the_support_report_is_saved_whole_and_stays_out_of_the_result(
     ]
     assert secrets and all(line.endswith(": [redacted]") for line in secrets)
     assert "PRIVATE KEY-----" not in text
-    assert not (tmp_path / "audit.jsonl").exists()
+    # One audit line per report (0.3.0), with the path and never the text.
+    (line,) = server.audit()
+    assert line["tool"] == "create_support_report" and line["outcome"] == "applied"
+    assert line["after"] == {"path": str(path), "size_bytes": result["size_bytes"]}
+    assert "Support summary" not in (tmp_path / "audit.jsonl").read_text("utf-8")
 
 
 async def test_an_approval_answered_after_ten_minutes_changes_nothing(
