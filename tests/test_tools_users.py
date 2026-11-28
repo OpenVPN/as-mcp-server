@@ -2508,7 +2508,8 @@ async def test_a_new_password_goes_to_a_file_and_never_into_the_result(
     password = server.passwords["alice"]
     path = Path(item["path"])
     assert path.read_text("utf-8") == password + "\n"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert item["reminder"] == DELIVERY_REMINDER
     assert item["before"]["password_defined"] is False
     assert item["after"]["password_defined"] is True
